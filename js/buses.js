@@ -1,16 +1,18 @@
-// buses.js - live BMTC bus positions, fetched from our relay (/api/buses).
+// buses.js - live BMTC bus positions.
 //
-// Every 30 seconds it asks the relay for the latest snapshot. Buses whose GPS reported a new
-// position since the last snapshot become "pings", which main.js turns into notes, spread out
-// over the next 30 seconds in the order they happened. So you hear the city about a minute
-// behind real time, like a radio broadcast delay.
+// Where the site runs on Cloudflare, it asks our relay (/api/buses) every 45 seconds: one shared,
+// shrunk copy of the feed for everyone. Where there is no relay (GitHub Pages), it reads the
+// public feed from reclaim.city directly, once a minute. Buses whose GPS reported a new position
+// since the last snapshot become "pings", which main.js turns into notes, spread out over the
+// next poll in the order they happened. So you hear the city a minute or two behind real time,
+// like a radio broadcast delay.
 //
-// If the relay can't be reached at all (GitHub Pages, a preview, or running from a plain file
-// server), it shows a saved snapshot instead and says so.
-import { ORIGIN } from '../lib/bus-feed.js';
+// If neither can be reached (a preview, or offline), it shows a saved snapshot and says so.
+import { ORIGIN, FEED_URL, decodeVehiclePositions, compactFeed } from '../lib/bus-feed.js';
 import { toKm } from './areas.js';
 
 export const POLL_MS = 45_000; // buses report every 30 s to 3 min, so 45 s feels live and stretches the free plan
+const DIRECT_POLL_MS = 60_000; // gentler when every browser reads the public feed itself
 const HIDDEN_POLL_MS = 60_000;
 const STALE_AFTER_S = 600; // the feed counts as paused if its newest position is this old
 const STANDING_KMH = 6;
@@ -25,12 +27,19 @@ export class BusFeed {
     this.fetchedAt = 0;
     this.nextPollAt = 0;
     this.timer = null;
+    this.source = 'relay'; // relay | direct
+    this.routeNames = null;
+  }
+
+  /** How long between polls right now. */
+  get interval() {
+    return this.source === 'direct' ? DIRECT_POLL_MS : POLL_MS;
   }
 
   start() {
     this.poll();
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && performance.now() > this.nextPollAt - POLL_MS + 5000) this.poll();
+      if (!document.hidden && performance.now() > this.nextPollAt - this.interval + 5000) this.poll();
     });
   }
 
@@ -41,21 +50,54 @@ export class BusFeed {
       this.nextPollAt = Infinity; // nobody is looking or listening: wait for the tab to come back
       return;
     }
-    const wait = hidden ? HIDDEN_POLL_MS : POLL_MS;
+    const wait = hidden ? HIDDEN_POLL_MS : this.interval;
     this.nextPollAt = performance.now() + wait;
     this.timer = setTimeout(() => this.poll(), wait);
   }
 
+  async fetchRelay() {
+    const res = await fetch('api/buses', { cache: 'no-store' });
+    const type = res.headers.get('content-type') || '';
+    if (res.status === 404 || !type.includes('json')) {
+      const err = new Error('no relay on this host');
+      err.missing = true;
+      throw err;
+    }
+    if (!res.ok) throw new Error(`relay answered ${res.status}`);
+    const data = await res.json();
+    if (!data.v) throw new Error('relay sent no buses');
+    return data;
+  }
+
+  async fetchDirect() {
+    if (!this.routeNames) this.routeNames = await (await fetch('data/bmtc-routes.json')).json();
+    const res = await fetch(FEED_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`bus feed answered ${res.status}`);
+    const feed = decodeVehiclePositions(new Uint8Array(await res.arrayBuffer()));
+    if (!feed.vehicles.length) throw new Error('bus feed was empty');
+    return compactFeed(feed, this.routeNames, Math.floor(Date.now() / 1000));
+  }
+
   async poll() {
     clearTimeout(this.timer);
-    try {
-      const res = await fetch('api/buses', { cache: 'no-store' });
-      const type = res.headers.get('content-type') || '';
-      if (!res.ok || !type.includes('json')) throw new Error(`relay answered ${res.status}`);
-      const data = await res.json();
-      if (!data.v) throw new Error('relay sent no buses');
+    let data = null;
+    if (this.source === 'relay') {
+      try {
+        data = await this.fetchRelay();
+      } catch (err) {
+        if (err.missing) this.source = 'direct'; // no relay here (GitHub Pages): read the feed itself
+      }
+    }
+    if (!data && this.source === 'direct') {
+      try {
+        data = await this.fetchDirect();
+      } catch {
+        // the feed can't be reached from here: fall through to paused or sample
+      }
+    }
+    if (data) {
       this.ingest(data, false);
-    } catch (err) {
+    } else {
       if (!this.feedTime || this.state === 'sample') {
         await this.loadSample();
       } else {

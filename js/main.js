@@ -2,7 +2,7 @@
 import { Timetable, serviceMoment, istNow, formatClock, IST_OFFSET_MS } from './timetable.js';
 import { Music, RAGAS, STYLES, LINE_VOICES, BUS_VOICES, BUS_DEGREES, ragaScale, tempoForSpeed } from './music.js';
 import { Areas, toKm } from './areas.js';
-import { BusFeed, POLL_MS } from './buses.js';
+import { BusFeed } from './buses.js';
 import { Record } from './record.js';
 
 const $ = (id) => document.getElementById(id);
@@ -346,7 +346,7 @@ function onSnapshot({ pings, windowStart, windowEnd }) {
   // Replay the last window's pings over the next poll, in the order they happened.
   const now = performance.now();
   const span = Math.max(1, windowEnd - windowStart);
-  const spread = Math.min(POLL_MS, span * 1000);
+  const spread = Math.min(feed.interval, span * 1000);
   for (const b of pings) queue.push({ atPerf: now + 400 + ((b.ts - windowStart) / span) * spread, bus: b });
   queue.sort((p, q) => p.atPerf - q.atPerf);
   if (queue.length > 6000) queue.splice(0, queue.length - 6000);
@@ -519,7 +519,7 @@ function updateUi(ist, trains, now) {
 
   if (state === 'live' && Number.isFinite(feed.nextPollAt)) {
     const left = Math.max(0, feed.nextPollAt - now);
-    $('np-progress').style.width = `${Math.min(100, (1 - left / POLL_MS) * 100)}%`;
+    $('np-progress').style.width = `${Math.min(100, (1 - left / feed.interval) * 100)}%`;
     $('np-left').textContent = formatClock(feed.feedTime * 1000 + IST_OFFSET_MS);
     $('np-right').textContent = `next in ${Math.ceil(left / 1000)} s`;
   } else {
