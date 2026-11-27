@@ -51,6 +51,24 @@ until the next day. To remove that limit, turn on **Workers Paid** in the Cloudf
 ($5 a month, 10 million requests a month included, about 125,000 listener-hours). It also lifts the
 per-request processing limit, which the relay comes close to on the free plan.
 
+## Where it's live
+
+**https://soumyachoubey.github.io/ooru-raga/**, on GitHub Pages (free), published from the
+`gh-pages` branch. To publish a change, push it to `main` and then to `gh-pages`:
+
+```bash
+git push origin main
+```
+
+```bash
+git push origin main:gh-pages
+```
+
+On GitHub Pages there is no relay, so each listener's browser reads the public bus feed from
+reclaim.city directly, once a minute. That's fine for a launch of hundreds or a few thousand
+listeners at a time. For bigger crowds, also deploy to Cloudflare Pages (below): the relay in
+`functions/api/buses.js` turns on automatically there, and the page uses it instead.
+
 ## Launch checklist
 
 1. **Code on GitHub.** The repository holds everything Cloudflare needs.
