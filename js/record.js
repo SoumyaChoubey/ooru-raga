@@ -8,7 +8,7 @@ const CITY_RADIUS_KM = 21.5;
 const RIPPLE_S = 1.8;
 const LABEL_S = 2.8;
 const TINTS = ['--gulal', '--haldi', '--neeli-2', '--sindoor', '--tota', '--zari'];
-const RIM_TEXT = ' NAMMA OORU  •  {areas} AREAS  •  BMTC LIVE  •  3 METRO LINES  •  SIDE A  •  33⅓ RPM  •  ಊರು ರಾಗ  •';
+const RIM_TEXT = ' NAMMA OORU  •  {areas} AREAS  •  BMTC LIVE  •  3 METRO LINES  •  {side}  •  33⅓ RPM  •  ಊರು ರಾಗ  •';
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -19,6 +19,7 @@ export class Record {
     this.metro = metro;
     this.areas = areas;
     this.selected = null;
+    this.side = { side: 'Side A', name: 'Carnatic' };
     this.buses = [];
     this.ripples = [];
     this.labels = [];
@@ -40,6 +41,7 @@ export class Record {
       record: css('--record'),
       cream: css('--cream'),
       haldi: css('--haldi'),
+      gulal: css('--gulal'),
       tota: css('--tota'),
       sindoor: css('--sindoor'),
       lines: this.metro.lines.map((l) => css(`--line-${l.id.toLowerCase()}`) || l.color),
@@ -99,6 +101,12 @@ export class Record {
     this.renderBuses();
   }
 
+  /** Side A (Carnatic) or Side B (Carnatic jazz): changes the rim text and the colour of the sun. */
+  setSide(side) {
+    this.side = side;
+    this.renderStatic();
+  }
+
   setBuses(buses) {
     this.buses = buses;
     this.renderBuses();
@@ -136,7 +144,7 @@ export class Record {
       const r = R * (i % 2 ? 1.055 : 1.12);
       c.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
     }
-    c.fillStyle = col.haldi;
+    c.fillStyle = this.side.side === 'Side B' ? col.gulal : col.haldi;
     c.fill();
     c.lineWidth = 2;
     c.strokeStyle = col.ink;
@@ -237,7 +245,7 @@ export class Record {
     c.textAlign = 'center';
     let ang = -Math.PI * 0.86;
     const rr = R - (this.compact ? 10 : 14);
-    for (const ch of RIM_TEXT.replace('{areas}', this.areas.list.length)) {
+    for (const ch of RIM_TEXT.replace('{areas}', this.areas.list.length).replace('{side}', `${this.side.side} · ${this.side.name}`.toUpperCase())) {
       const w = c.measureText(ch).width;
       ang += w / 2 / rr;
       c.save();
@@ -368,12 +376,21 @@ export class Record {
     c.font = `600 ${this.compact ? 10.5 : 12}px "IBM Plex Sans", system-ui, sans-serif`;
     c.textBaseline = 'middle';
     c.textAlign = 'left';
+    const placed = [];
     for (const l of this.labels) {
       const age = (now - l.start) / 1000 / LABEL_S;
       const [x, y] = this.px(l.at);
       const w = c.measureText(l.text).width + 12;
       const tx = Math.max(6, Math.min(this.w - w - 6, x + 10));
-      const ty = Math.max(14, Math.min(this.h - 14, y - 14));
+      let ty = Math.max(14, Math.min(this.h - 14, y - 14));
+      // Step down past any label already showing, so busy areas don't pile text up.
+      for (let tries = 0; tries < 6; tries++) {
+        const hit = placed.find((p) => tx < p.x + p.w && tx + w > p.x && Math.abs(ty - p.y) < 22);
+        if (!hit) break;
+        ty = hit.y + 23;
+      }
+      ty = Math.min(this.h - 14, ty);
+      placed.push({ x: tx, y: ty, w });
       c.globalAlpha = Math.min(1, (1 - age) * 2.5);
       c.fillStyle = col.cream;
       c.fillRect(tx, ty - 10, w, 20);

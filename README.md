@@ -3,12 +3,15 @@
 Bengaluru, played live. Pick an area of the city (Jayanagar, HSR Layout, Bellandur and 63 more) and
 hear its BMTC buses and Namma Metro trains turned into Carnatic music as they move.
 
-- **Buses are the rhythm.** About 4,000 buses report their GPS position every few minutes. When one in
-  your area reports, it plays the santoor if it's moving and the mridangam if it's standing still.
-- **Traffic sets the pulse.** A kanjira keeps Adi tala. Its tempo follows how fast your area's buses
-  are moving, so a jam slows the song down.
-- **The metro is the melody.** Trains follow the BMRCL timetable. When one reaches a station in your
-  area, the Purple Line plays veena, Green plays bansuri and Yellow plays temple bells.
+- **Buses lead the song.** About 4,000 buses report their GPS position every few minutes. When one in
+  your area reports, it plays the veena if it's moving and the bansuri flute if it's standing still.
+- **Traffic sets the pulse.** The tempo follows how fast your area's buses are moving, so a jam slows
+  the song down. The record has two sides:
+  - **Side A, Carnatic:** kanjira and mridangam in Adi tala, with a tanpura drone.
+  - **Side B, Carnatic jazz:** a swinging rhythm section. A walking bass and electric-piano chords
+    are built only from the raga's notes, with a ride cymbal, and a mridangam phrase every fourth bar.
+- **The metro adds colour.** Trains follow the BMRCL timetable. When one reaches a station in your
+  area, the Purple Line plays santoor, Green plays jal tarang and Yellow plays temple bells.
 - **Every area has a raga**, with a tanpura tuned to match. Links like `/#hsr-layout` open an area
   directly, so people can share their own neighbourhood.
 
@@ -84,8 +87,9 @@ python3 -m http.server 8000
 
 ## Change how it sounds
 
-- [`js/music.js`](js/music.js): the instruments, the ragas (`RAGAS`), which line plays what
-  (`LINE_VOICES`), how traffic sets the tempo (`tempoForSpeed`), and the home pitch (`SA_MIDI`).
+- [`js/music.js`](js/music.js): the instruments, the ragas (`RAGAS`), what buses play (`BUS_VOICES`),
+  which metro line plays what (`LINE_VOICES`), the jazz comping patterns (`COMPING`) and swing amount
+  (`SWING`), how traffic sets the tempo (`tempoForSpeed`), and the home pitch (`SA_MIDI`).
 - [`scripts/build_areas.py`](scripts/build_areas.py): the list of areas, their Kannada names, and
   which raga each area gets. Rebuild with the command in the next section.
 - [`style.css`](style.css): the colours and fonts, as variables at the top.

@@ -2,9 +2,11 @@
 // There are no recordings. If you want to change how the city sounds, start here.
 //
 // The ensemble for each area:
-//   Buses (live)       moving buses play the santoor, buses standing still play the mridangam
-//   Metro (timetable)  trains reaching the area's stations play veena, flute or bells by line
-//   Pulse              a soft kanjira keeping Adi tala; its tempo follows the area's traffic
+//   Buses (live)       moving buses play the veena, buses standing still play the bansuri flute
+//   Metro (timetable)  trains at the area's stations: santoor, jal tarang or temple bells by line
+//   Rhythm             Side A (Carnatic): kanjira and mridangam in Adi tala
+//                      Side B (Carnatic jazz): walking bass, electric piano and ride cymbal, swung
+//                      Either way the tempo follows the area's traffic.
 //   Tanpura            the drone underneath, tuned to the area's raga
 
 // Five-note Carnatic ragas: any notes from one of these sound good together, which matters
@@ -22,18 +24,38 @@ export const RAGAS = {
   shuddhadhanyasi: { name: 'Shuddha Dhanyasi', swaras: ['S', 'G2', 'M1', 'P', 'N2'], semis: [0, 3, 5, 7, 10] },
 };
 
-// One instrument per metro line. `octave` is how far above Sa it sits.
-// `maxDegree` is the note the station furthest from Majestic gets (5 notes per octave).
-export const LINE_VOICES = {
-  PURPLE: { instrument: 'Veena', kind: 'veena', octave: 0, maxDegree: 12, level: 0.95 },
-  GREEN: { instrument: 'Bansuri flute', kind: 'flute', octave: 1, maxDegree: 10, level: 0.55 },
-  YELLOW: { instrument: 'Temple bells', kind: 'bells', octave: 2, maxDegree: 7, level: 0.8 },
+// The two sides of the record.
+export const STYLES = {
+  carnatic: { side: 'Side A', name: 'Carnatic', rhythm: 'Kanjira, mridangam' },
+  jazz: { side: 'Side B', name: 'Carnatic jazz', rhythm: 'Bass, keys, ride' },
 };
 
+// Buses: the most notes, so they get the two leading Carnatic instruments.
+export const BUS_VOICES = {
+  moving: { instrument: 'Veena', octave: 0 },
+  standing: { instrument: 'Bansuri flute', octave: 1 },
+};
 export const BUS_DEGREES = 10; // bus notes span two octaves, north of the area highest
+
+// Metro: one instrument per line. `maxDegree` is the note the station furthest from Majestic gets.
+export const LINE_VOICES = {
+  PURPLE: { instrument: 'Santoor', kind: 'santoor', octave: 1, maxDegree: 10, level: 0.85 },
+  GREEN: { instrument: 'Jal tarang', kind: 'jaltarang', octave: 1, maxDegree: 10, level: 0.9 },
+  YELLOW: { instrument: 'Temple bells', kind: 'bells', octave: 2, maxDegree: 7, level: 0.75 },
+};
+
 const SA_MIDI = 50; // D3, about 147 Hz. Change this one number to retune everything.
 const MAX_NOTES_PER_STEP = 2; // per voice, so busy areas stay musical
 const ADI_TALA_ACCENTS = [1, 0, 0, 0, 0.7, 0, 0.7, 0]; // 4 + 2 + 2 beats
+const SWING = 0.17; // jazz: off-beat eighths land at two thirds of the beat
+const COMPING = [
+  // [beat, length in beats] for the electric piano, one pattern per bar
+  [[0, 1], [1 + 2 / 3, 0.9]],
+  [[2 / 3, 0.5], [2 + 2 / 3, 1]],
+  [[0, 3.2]],
+  [[1, 0.6], [3, 0.6]],
+  [[0, 0.7], [2 + 2 / 3, 0.5], [3 + 2 / 3, 0.3]],
+];
 
 const SWARA_NAMES = { S: 'Sa', R: 'Ri', G: 'Ga', M: 'Ma', P: 'Pa', D: 'Dha', N: 'Ni' };
 const SUBSCRIPT = { 1: '₁', 2: '₂', 3: '₃' };
@@ -63,7 +85,8 @@ export class Music {
     this.ctx = null;
     this.playing = false;
     this.raga = RAGAS.mohanam;
-    this.layers = { buses: true, metro: true, tanpura: true };
+    this.style = 'carnatic';
+    this.layers = { buses: true, metro: true, rhythm: true, drone: true };
     this.volume = 0.8;
     this.tempo = 76;
     this.slots = new Map();
@@ -73,6 +96,7 @@ export class Music {
     this.nextDrone = 0;
     this.nextBeat = 0;
     this.beat = 0;
+    this.walk = 0; // walking bass position (raga degree)
 
     // Note for each metro station: the further from the line's home station, the higher.
     this.degrees = lines.map((L) => {
@@ -98,6 +122,11 @@ export class Music {
     this.tempo = bpm;
   }
 
+  setStyle(style) {
+    this.style = STYLES[style] ? style : 'carnatic';
+    this.#levels();
+  }
+
   setVolume(v) {
     this.volume = v;
     if (this.ctx) this.master.gain.setTargetAtTime(this.playing ? v : 0, this.ctx.currentTime, 0.05);
@@ -105,10 +134,18 @@ export class Music {
 
   setLayer(name, on) {
     this.layers[name] = on;
+    this.#levels();
+  }
+
+  #levels() {
     if (!this.ctx) return;
-    const g = { buses: this.busGain, metro: this.metroGain, tanpura: this.droneGain }[name];
-    const level = { buses: 1, metro: 1, tanpura: 0.2 }[name];
-    g.gain.setTargetAtTime(on ? level : 0, this.ctx.currentTime, 0.2);
+    const t = this.ctx.currentTime;
+    const jazz = this.style === 'jazz';
+    const set = (g, v) => g.gain.setTargetAtTime(v, t, 0.25);
+    set(this.busGain, this.layers.buses ? 1 : 0);
+    set(this.metroGain, this.layers.metro ? 1 : 0);
+    set(this.rhythmGain, this.layers.rhythm ? 1 : 0);
+    set(this.droneGain, this.layers.drone ? (jazz ? 0.07 : 0.2) : 0);
   }
 
   async start() {
@@ -136,10 +173,11 @@ export class Music {
     const now = this.ctx.currentTime;
     const t = now + Math.max(0, (eventPerf - performance.now()) / 1000) + 0.04;
     const step = 60 / this.tempo / 2; // eighth notes on the pulse
+    const swing = this.style === 'jazz' ? SWING * 2 * step : 0;
     const origin = this.beatAnchor || 0;
     let slot = Math.ceil((t - origin) / step);
     for (let tries = 0; tries < 3; tries++, slot++) {
-      const at = origin + slot * step;
+      const at = origin + slot * step + (Math.abs(slot) % 2 ? swing : 0);
       const key = `${voiceKey}:${Math.round(at * 100)}`;
       const used = this.slots.get(key) || [];
       if (used.length >= MAX_NOTES_PER_STEP || used.includes(degree)) continue;
@@ -161,13 +199,12 @@ export class Music {
     const degree = this.degrees[line][local];
     const when = this.#slot(`m${line}`, degree, eventPerf);
     if (when === null) return null;
-    const freq = this.#freq(LINE_VOICES[this.lines[line].id].octave, degree);
-    const below = degree > 0 && Math.random() < 0.35 ? this.#freq(LINE_VOICES[this.lines[line].id].octave, degree - 1) / freq : 0;
+    const voice = LINE_VOICES[this.lines[line].id];
+    const freq = this.#freq(voice.octave, degree);
     const vel = 0.72 + Math.random() * 0.28;
     const out = this.#panner(pan, this.lineGains[line]);
-    const kind = LINE_VOICES[this.lines[line].id].kind;
-    if (kind === 'veena') this.#veena(when, freq, vel, out, below);
-    else if (kind === 'flute') this.#flute(when, freq, vel, out, below);
+    if (voice.kind === 'santoor') this.#santoor(when, freq, vel, out);
+    else if (voice.kind === 'jaltarang') this.#jaltarang(when, freq, vel, out);
     else this.#bells(when, freq, vel, out);
     if (interchange && when - this.lastGong > 6) {
       this.lastGong = when;
@@ -176,21 +213,23 @@ export class Music {
     return this.#result(when, swaraName(this.raga, degree));
   }
 
-  /** A live bus reported its position in the area. Moving: santoor note. Standing: mridangam. */
+  /** A live bus reported its position in the area. Moving: veena. Standing still: flute. */
   playBus({ moving, degree, eventPerf, pan }) {
     if (!this.playing || !this.layers.buses) return null;
-    const when = this.#slot(moving ? 'santoor' : 'mridangam', moving ? degree : 0, eventPerf);
+    const voice = moving ? BUS_VOICES.moving : BUS_VOICES.standing;
+    const when = this.#slot(moving ? 'veena' : 'flute', degree, eventPerf);
     if (when === null) return null;
-    const vel = 0.7 + Math.random() * 0.3;
-    if (moving) {
-      this.#santoor(when, this.#freq(1, degree), vel, this.#panner(pan, this.busGain));
-      return this.#result(when, swaraName(this.raga, degree));
-    }
-    this.#mridangam(when, vel, this.#panner(pan, this.busGain));
-    return this.#result(when, 'Tham');
+    const freq = this.#freq(voice.octave, degree);
+    // Gamaka: sometimes slide up into the note from the one below, as Carnatic players do.
+    const below = degree > 0 && Math.random() < 0.35 ? this.#freq(voice.octave, degree - 1) / freq : 0;
+    const vel = 0.72 + Math.random() * 0.28;
+    const out = this.#panner(pan, this.busGain);
+    if (moving) this.#veena(when, freq, vel, out, below);
+    else this.#flute(when, freq, vel * 0.72, out, below);
+    return this.#result(when, swaraName(this.raga, degree));
   }
 
-  /** Keeps the tanpura and the pulse going. Call a few times a second. */
+  /** Keeps the tanpura and the rhythm going. Call a few times a second. */
   tick() {
     if (!this.playing || !this.ctx) return;
     const now = this.ctx.currentTime;
@@ -205,11 +244,49 @@ export class Music {
     }
     if (this.nextBeat < now) this.nextBeat = now + 0.05;
     while (this.nextBeat < horizon) {
-      const accent = ADI_TALA_ACCENTS[this.beat % 8];
-      this.#kanjira(this.nextBeat, accent ? 0.5 + 0.5 * accent : 0.32, accent === 1);
+      const beatLen = 60 / this.tempo;
+      if (this.style === 'jazz') this.#jazzBeat(this.nextBeat, beatLen);
+      else this.#carnaticBeat(this.nextBeat);
       this.beatAnchor = this.nextBeat; // notes snap to this beat's grid
       this.beat++;
-      this.nextBeat += 60 / this.tempo;
+      this.nextBeat += beatLen;
+    }
+  }
+
+  #carnaticBeat(t) {
+    const pos = this.beat % 8;
+    const accent = ADI_TALA_ACCENTS[pos];
+    this.#kanjira(t, accent ? 0.5 + 0.5 * accent : 0.32, accent === 1);
+    if (pos === 0) this.#mridangam(t, 0.85, this.rhythmGain, 1); // sama, the start of the cycle
+    if (pos === 4) this.#mridangam(t, 0.5, this.rhythmGain, 1.5);
+  }
+
+  #jazzBeat(t, beatLen) {
+    const pos = this.beat % 4;
+    const bar = Math.floor(this.beat / 4);
+    // Ride: every beat, plus the swung "and" of 2 and 4. Hi-hat closes on 2 and 4.
+    this.#ride(t, pos === 0 ? 0.9 : 0.7);
+    if (pos === 1 || pos === 3) {
+      this.#ride(t + beatLen * (0.5 + SWING), 0.45);
+      this.#hat(t);
+    }
+    // Two chords built from the raga's own notes, two bars each.
+    const root = Math.floor(bar / 2) % 2 ? 3 : 0;
+    const nextRoot = Math.floor((bar + 1) / 2) % 2 ? 3 : 0;
+    // Walking bass: the chord's root on the downbeat, steps through the raga, leads into the next.
+    if (pos === 0) this.walk = root;
+    else if (pos === 3) this.walk = nextRoot + (Math.random() < 0.5 ? 1 : -1);
+    else this.walk += [-1, 1, 1, 2][Math.floor(Math.random() * 4)];
+    this.walk = Math.max(-2, Math.min(7, this.walk));
+    this.#bass(t, this.#freq(-1, this.walk), beatLen * 0.92);
+    if (pos === 0) {
+      const pattern = COMPING[Math.floor(Math.random() * COMPING.length)];
+      const chord = [0, 2, 4, 6].map((d) => this.#freq(0, root + d));
+      for (const [at, len] of pattern) this.#keys(t + at * beatLen, chord, len * beatLen);
+    }
+    // Every fourth bar ends with a mridangam phrase, ta-ka-di-mi.
+    if (bar % 4 === 3 && pos === 3) {
+      [1, 1.3, 1.15, 0.9].forEach((p, i) => this.#mridangam(t + (i * beatLen) / 4, 0.55 + (i === 0) * 0.2, this.rhythmGain, p));
     }
   }
 
@@ -245,7 +322,6 @@ export class Music {
     this.bus.connect(send).connect(this.reverb);
 
     this.metroGain = ctx.createGain();
-    this.metroGain.gain.value = this.layers.metro ? 1 : 0;
     this.metroGain.connect(this.bus);
     this.lineGains = this.lines.map((L) => {
       const g = ctx.createGain();
@@ -253,17 +329,12 @@ export class Music {
       g.connect(this.metroGain);
       return g;
     });
-
     this.busGain = ctx.createGain();
-    this.busGain.gain.value = this.layers.buses ? 1 : 0;
     this.busGain.connect(this.bus);
-
-    this.pulseGain = ctx.createGain();
-    this.pulseGain.gain.value = 0.55;
-    this.pulseGain.connect(this.busGain);
+    this.rhythmGain = ctx.createGain();
+    this.rhythmGain.connect(this.bus);
 
     this.droneGain = ctx.createGain();
-    this.droneGain.gain.value = this.layers.tanpura ? 0.2 : 0;
     this.droneGain.connect(this.master);
     const droneSend = ctx.createGain();
     droneSend.gain.value = 0.35;
@@ -272,6 +343,7 @@ export class Music {
     this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const n = this.noise.getChannelData(0);
     for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
+    this.#levels();
   }
 
   #impulse(seconds) {
@@ -293,7 +365,8 @@ export class Music {
 
   #freq(octave, degree) {
     const n = this.raga.semis.length;
-    const semi = Math.floor(degree / n) * 12 + this.raga.semis[degree % n];
+    const oct = Math.floor(degree / n);
+    const semi = oct * 12 + this.raga.semis[((degree % n) + n) % n];
     return midiHz(SA_MIDI + 12 * octave + semi);
   }
 
@@ -309,6 +382,22 @@ export class Music {
     p.pan.value = Math.max(-1, Math.min(1, pan || 0));
     p.connect(dest);
     return p;
+  }
+
+  #noiseBurst(t, dur, filterType, freq, q, level, out) {
+    const ctx = this.ctx;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = filterType;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(level, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    n.connect(f).connect(g).connect(out);
+    n.start(t, Math.random() * 0.5);
+    n.stop(t + dur + 0.02);
   }
 
   // ---------------------------------------------------------------- instruments
@@ -355,7 +444,6 @@ export class Music {
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     if (below) {
-      // gamaka: slide up into the note from the one below
       src.playbackRate.setValueAtTime(rate * below, t);
       src.playbackRate.linearRampToValueAtTime(rate, t + 0.14);
     } else {
@@ -370,94 +458,16 @@ export class Music {
     tone.type = 'lowpass';
     tone.frequency.value = 4200;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.42 * vel, t);
+    g.gain.setValueAtTime(0.46 * vel, t);
     g.gain.setTargetAtTime(0, t + dur - 0.5, 0.15);
     src.connect(body).connect(tone).connect(g).connect(out);
     src.start(t);
     src.stop(t + dur);
   }
 
-  /** Hammered strings: a bright, quick pluck struck twice, like a santoor player's mallets. */
-  #santoor(t, freq, vel, out) {
-    const ctx = this.ctx;
-    const dur = 1.8;
-    const { buffer, rate } = this.#pluck(freq, dur, 0.9965, 0.88);
-    [
-      [0, 0.3],
-      [0.075, 0.13],
-    ].forEach(([offset, level]) => {
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.playbackRate.value = rate;
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 220;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(level * vel, t + offset);
-      g.gain.setTargetAtTime(0, t + dur - 0.5, 0.12);
-      src.connect(hp).connect(g).connect(out);
-      src.start(t + offset);
-      src.stop(t + offset + dur);
-    });
-  }
-
-  /** Mridangam "tham": the big bass head, a thud whose pitch drops as it rings. */
-  #mridangam(t, vel, out) {
-    const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(165, t);
-    o.frequency.exponentialRampToValueAtTime(78, t + 0.28);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.62 * vel, t + 0.006);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
-    const skin = ctx.createBufferSource();
-    skin.buffer = this.noise;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 1100;
-    bp.Q.value = 1.4;
-    const sg = ctx.createGain();
-    sg.gain.setValueAtTime(0.22 * vel, t);
-    sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
-    o.connect(g).connect(out);
-    skin.connect(bp).connect(sg).connect(out);
-    o.start(t);
-    o.stop(t + 0.8);
-    skin.start(t, Math.random() * 0.5);
-    skin.stop(t + 0.06);
-  }
-
-  /** Kanjira tap for the pulse: a jingle of filtered noise over a small drum. */
-  #kanjira(t, vel, accent) {
-    const ctx = this.ctx;
-    const n = ctx.createBufferSource();
-    n.buffer = this.noise;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'bandpass';
-    hp.frequency.value = accent ? 5200 : 6400;
-    hp.Q.value = 2.5;
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.16 * vel, t);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t + (accent ? 0.16 : 0.07));
-    const d = ctx.createOscillator();
-    d.frequency.setValueAtTime(accent ? 420 : 520, t);
-    d.frequency.exponentialRampToValueAtTime(accent ? 300 : 400, t + 0.08);
-    const dg = ctx.createGain();
-    dg.gain.setValueAtTime(0.2 * vel, t);
-    dg.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-    n.connect(hp).connect(ng).connect(this.pulseGain);
-    d.connect(dg).connect(this.pulseGain);
-    n.start(t, Math.random() * 0.5);
-    n.stop(t + 0.2);
-    d.start(t);
-    d.stop(t + 0.14);
-  }
-
   #flute(t, freq, vel, out, below) {
     const ctx = this.ctx;
-    const dur = 1.5;
+    const dur = 1.6;
     const tone = ctx.createOscillator();
     tone.type = 'sine';
     const air = ctx.createOscillator();
@@ -482,8 +492,8 @@ export class Music {
     airLevel.gain.value = 0.22;
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.34 * vel, t + 0.07);
-    env.gain.linearRampToValueAtTime(0.24 * vel, t + 0.45);
+    env.gain.linearRampToValueAtTime(0.36 * vel, t + 0.07);
+    env.gain.linearRampToValueAtTime(0.26 * vel, t + 0.45);
     env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     const breath = ctx.createBufferSource();
     breath.buffer = this.noise;
@@ -504,6 +514,60 @@ export class Music {
     breath.connect(bp).connect(breathEnv).connect(lp);
     env.connect(lp).connect(out);
     for (const n of [tone, air, vib, breath]) {
+      n.start(t);
+      n.stop(t + dur + 0.05);
+    }
+  }
+
+  /** Hammered strings: a bright, quick pluck struck twice, like a santoor player's mallets. */
+  #santoor(t, freq, vel, out) {
+    const ctx = this.ctx;
+    const dur = 1.8;
+    const { buffer, rate } = this.#pluck(freq, dur, 0.9965, 0.88);
+    [
+      [0, 0.62],
+      [0.075, 0.26],
+    ].forEach(([offset, level]) => {
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = rate;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 220;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(level * vel, t + offset);
+      g.gain.setTargetAtTime(0, t + dur - 0.5, 0.12);
+      src.connect(hp).connect(g).connect(out);
+      src.start(t + offset);
+      src.stop(t + offset + dur);
+    });
+  }
+
+  /** Jal tarang: porcelain bowls of water struck with sticks. A pure tone that wobbles as it rings. */
+  #jaltarang(t, freq, vel, out) {
+    const ctx = this.ctx;
+    const dur = 1.6;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(freq * 1.012, t);
+    o.frequency.exponentialRampToValueAtTime(freq, t + 0.06);
+    const wobble = ctx.createOscillator();
+    wobble.frequency.value = 6.5;
+    const depth = ctx.createGain();
+    depth.gain.setValueAtTime(0, t);
+    depth.gain.linearRampToValueAtTime(freq * 0.004, t + 0.4);
+    wobble.connect(depth).connect(o.frequency);
+    const partial = ctx.createOscillator();
+    partial.frequency.value = freq * 2.76;
+    const pg = ctx.createGain();
+    pg.gain.setValueAtTime(0.06 * vel, t);
+    pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.3 * vel, t + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(env).connect(out);
+    partial.connect(pg).connect(out);
+    for (const n of [o, wobble, partial]) {
       n.start(t);
       n.stop(t + dur + 0.05);
     }
@@ -535,6 +599,124 @@ export class Music {
     for (const n of [carrier, mod, shimmer]) {
       n.start(t);
       n.stop(t + dur + 0.05);
+    }
+  }
+
+  /** Mridangam stroke: the bass head's thud with its pitch dropping. `pitch` varies the stroke. */
+  #mridangam(t, vel, out, pitch = 1) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(165 * pitch, t);
+    o.frequency.exponentialRampToValueAtTime(78 * pitch, t + 0.28);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.5 * vel, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.75);
+    this.#noiseBurst(t, 0.05, 'bandpass', 1100 * pitch, 1.4, 0.2 * vel, out);
+  }
+
+  /** Kanjira tap: a jingle of filtered noise over a small frame drum. */
+  #kanjira(t, vel, accent) {
+    const ctx = this.ctx;
+    this.#noiseBurst(t, accent ? 0.16 : 0.07, 'bandpass', accent ? 5200 : 6400, 2.5, 0.24 * vel, this.rhythmGain);
+    const d = ctx.createOscillator();
+    d.frequency.setValueAtTime(accent ? 420 : 520, t);
+    d.frequency.exponentialRampToValueAtTime(accent ? 300 : 400, t + 0.08);
+    const dg = ctx.createGain();
+    dg.gain.setValueAtTime(0.3 * vel, t);
+    dg.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    d.connect(dg).connect(this.rhythmGain);
+    d.start(t);
+    d.stop(t + 0.14);
+  }
+
+  /** Ride cymbal: several square waves at clashing pitches, filtered high, ringing on. */
+  #ride(t, vel) {
+    const ctx = this.ctx;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 5200;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 8800;
+    bp.Q.value = 0.6;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.012 * vel, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    hp.connect(bp).connect(g).connect(this.rhythmGain);
+    for (const f of [263, 400, 421, 474, 587, 845]) {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = f * 2.2;
+      o.connect(hp);
+      o.start(t);
+      o.stop(t + 0.92);
+    }
+    this.#noiseBurst(t, 0.03, 'highpass', 9000, 0.7, 0.025 * vel, this.rhythmGain);
+  }
+
+  /** Hi-hat closed with the foot: a short "chick". */
+  #hat(t) {
+    this.#noiseBurst(t, 0.05, 'highpass', 7500, 0.8, 0.05, this.rhythmGain);
+  }
+
+  /** Upright bass: a round, low pluck. */
+  #bass(t, freq, dur) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    const sub = ctx.createOscillator();
+    sub.frequency.value = freq;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.exponentialRampToValueAtTime(320, t + 0.2);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.075, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.034, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(lp);
+    sub.connect(lp);
+    lp.connect(g).connect(this.rhythmGain);
+    for (const n of [o, sub]) {
+      n.start(t);
+      n.stop(t + dur + 0.02);
+    }
+  }
+
+  /** Electric piano chord: each note a soft FM "tine" with a bell-like attack. */
+  #keys(t, freqs, dur) {
+    const ctx = this.ctx;
+    const out = ctx.createGain();
+    out.gain.value = 0.045;
+    out.connect(this.rhythmGain);
+    for (const f of freqs) {
+      const c = ctx.createOscillator();
+      c.frequency.value = f;
+      const m = ctx.createOscillator();
+      m.frequency.value = f;
+      const idx = ctx.createGain();
+      idx.gain.setValueAtTime(f * 1.6, t);
+      idx.gain.exponentialRampToValueAtTime(f * 0.15, t + 0.3);
+      m.connect(idx).connect(c.frequency);
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(0.6, t + 0.006);
+      env.gain.exponentialRampToValueAtTime(0.25, t + 0.4);
+      env.gain.setValueAtTime(0.25, t + Math.max(0.41, dur));
+      env.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.35);
+      c.connect(env).connect(out);
+      for (const n of [c, m]) {
+        n.start(t);
+        n.stop(t + dur + 0.4);
+      }
     }
   }
 

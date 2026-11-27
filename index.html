@@ -67,7 +67,7 @@
     </article>
 
     <section class="np" aria-label="Now playing">
-      <div class="np-head caps"><span>Now playing</span><span id="np-area"></span></div>
+      <div class="np-head caps"><span id="np-side">Side A · Carnatic</span><span id="np-area"></span></div>
       <h3 id="np-title">Press play to start</h3>
       <p id="np-sub" class="np-sub">&nbsp;</p>
       <div class="np-bar"><span id="np-left">--:--</span><span class="track"><i id="np-progress"></i></span><span id="np-right">&nbsp;</span></div>
@@ -82,10 +82,16 @@
       <label class="vol" for="volume"><span class="caps">Volume</span><input id="volume" type="range" min="0" max="100" value="80"></label>
     </section>
 
+    <div class="sides" role="group" aria-label="Flip the record: choose the style">
+      <button class="side-btn" type="button" data-style="carnatic" aria-pressed="true"><span class="side-tag">Side A</span><b>Carnatic</b><small>Tanpura, kanjira, mridangam</small></button>
+      <button class="side-btn" type="button" data-style="jazz" aria-pressed="false"><span class="side-tag">Side B</span><b>Carnatic jazz</b><small>Walking bass, keys, ride cymbal</small></button>
+    </div>
+
     <div class="tokens" role="group" aria-label="Instruments. Tap one to mute it.">
-      <button class="token" type="button" data-layer="buses" aria-pressed="true"><span class="disc d-bus" lang="kn">ಬ</span><span><b>Buses</b><small>Santoor, mridangam</small></span></button>
-      <button class="token" type="button" data-layer="metro" aria-pressed="true"><span class="disc d-metro" lang="kn">ಮೆ</span><span><b>Metro</b><small>Veena, flute, bells</small></span></button>
-      <button class="token" type="button" data-layer="tanpura" aria-pressed="true"><span class="disc d-drone" lang="kn">ಸ</span><span><b>Tanpura</b><small>Drone</small></span></button>
+      <button class="token" type="button" data-layer="buses" aria-pressed="true"><span class="disc d-bus" lang="kn">ಬ</span><span><b>Buses</b><small>Veena, flute</small></span></button>
+      <button class="token" type="button" data-layer="metro" aria-pressed="true"><span class="disc d-metro" lang="kn">ಮೆ</span><span><b>Metro</b><small>Santoor, jal tarang, bells</small></span></button>
+      <button class="token" type="button" data-layer="rhythm" aria-pressed="true"><span class="disc d-rhythm" lang="kn">ತಾ</span><span><b>Rhythm</b><small id="rhythm-sub">Kanjira, mridangam</small></span></button>
+      <button class="token" type="button" data-layer="drone" aria-pressed="true"><span class="disc d-drone" lang="kn">ಸ</span><span><b>Tanpura</b><small>Drone</small></span></button>
     </div>
 
     <section class="board" aria-label="Just played">
@@ -107,16 +113,16 @@
 <section class="wrap notes" aria-labelledby="notes-title">
   <h2 id="notes-title">Liner notes <em>for the city</em></h2>
   <div>
-    <h3>Buses are the rhythm</h3>
-    <p>About 4,000 BMTC buses report where they are every few minutes. When one in your area reports, it plays: the santoor if it's moving, the mridangam if it's standing still. You hear them about a minute after they happen, in the order they happened.</p>
+    <h3>Buses lead the song</h3>
+    <p>About 4,000 BMTC buses report where they are every few minutes. When one in your area reports, it plays: the veena if it's moving, the bansuri flute if it's standing still. You hear them about a minute after they happen, in the order they happened.</p>
   </div>
   <div>
     <h3>Traffic sets the pulse</h3>
-    <p>A kanjira keeps Adi tala underneath. Its tempo follows how fast the buses in your area are moving, so a jam at Silk Board slows the whole song down.</p>
+    <p>On Side A a kanjira and mridangam keep Adi tala. Flip to Side B for Carnatic jazz: walking bass, keys built from the raga's notes, and a swinging ride cymbal. Either way the tempo follows your area's buses, so a jam at Silk Board slows the whole song down.</p>
   </div>
   <div>
-    <h3>The metro is the melody</h3>
-    <p>Trains follow the BMRCL timetable, not live GPS. When one reaches a station in your area, the Purple Line plays veena, Green plays bansuri and Yellow plays temple bells.</p>
+    <h3>The metro adds colour</h3>
+    <p>Trains follow the BMRCL timetable, not live GPS. When one reaches a station in your area, the Purple Line plays santoor, Green plays jal tarang and Yellow plays temple bells.</p>
   </div>
   <div>
     <h3>Every area has a raga</h3>

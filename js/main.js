@@ -1,6 +1,6 @@
 // main.js - connects the areas, live buses, metro timetable, music and the record, and runs the page.
 import { Timetable, serviceMoment, istNow, formatClock, IST_OFFSET_MS } from './timetable.js';
-import { Music, RAGAS, LINE_VOICES, BUS_DEGREES, ragaScale, tempoForSpeed } from './music.js';
+import { Music, RAGAS, STYLES, LINE_VOICES, BUS_VOICES, BUS_DEGREES, ragaScale, tempoForSpeed } from './music.js';
 import { Areas, toKm } from './areas.js';
 import { BusFeed, POLL_MS } from './buses.js';
 import { Record } from './record.js';
@@ -10,6 +10,7 @@ const DEFAULT_AREA = 'jayanagar';
 const BOARD_ROWS = 6;
 const FRESH_FIX_S = 15 * 60; // a bus counts as "in the area now" if it reported in the last 15 minutes
 const REGIONS = ['Central', 'North', 'East', 'South', 'West'];
+const STYLE_KEY = 'ooru-raga-style';
 const TIME = (sec) => formatClock(sec * 1000 + IST_OFFSET_MS, false);
 
 let tt;
@@ -54,6 +55,7 @@ async function init() {
 
   buildPicker();
   bindControls();
+  setStyle(savedStyle());
   feed = new BusFeed({ onSnapshot, isPlaying: () => music.playing });
   window.addEventListener('hashchange', () => selectArea(location.hash.slice(1)));
   selectArea(location.hash.slice(1) || DEFAULT_AREA);
@@ -82,7 +84,7 @@ function selectArea(id, { fromUser = false } = {}) {
   loadStops(area);
   updateTraffic();
   renderArea();
-  setNowPlaying(`Listening to ${area.name}`, `Raga ${RAGAS[area.raga].name}. Buses play santoor and mridangam, trains play veena.`);
+  setNowPlaying(`Listening to ${area.name}`, `Raga ${RAGAS[area.raga].name}. Moving buses play veena, waiting buses play flute.`);
   for (const b of document.querySelectorAll('[data-area]')) b.setAttribute('aria-pressed', String(b.dataset.area === area.id));
   if (fromUser && !music.playing) togglePlay();
 }
@@ -179,6 +181,7 @@ function bindControls() {
   $('prev').addEventListener('click', () => step(-1));
   $('next').addEventListener('click', () => step(1));
   $('volume').addEventListener('input', (e) => music.setVolume(Number(e.target.value) / 100));
+  for (const b of document.querySelectorAll('[data-style]')) b.addEventListener('click', () => setStyle(b.dataset.style, true));
   for (const t of document.querySelectorAll('[data-layer]')) {
     t.addEventListener('click', () => {
       const on = t.getAttribute('aria-pressed') !== 'true';
@@ -217,6 +220,33 @@ function bindControls() {
     tip.style.top = `${Math.min(y + 16, r.height - tip.offsetHeight - 8)}px`;
   });
   canvas.addEventListener('pointerleave', () => (tip.hidden = true));
+}
+
+// Side A (Carnatic) or Side B (Carnatic jazz). Remembered in this browser only.
+function savedStyle() {
+  try {
+    return localStorage.getItem(STYLE_KEY) || 'carnatic';
+  } catch {
+    return 'carnatic';
+  }
+}
+
+function setStyle(style, fromUser = false) {
+  const s = STYLES[style] ? style : 'carnatic';
+  music.setStyle(s);
+  record.setSide(STYLES[s]);
+  document.documentElement.dataset.side = s;
+  for (const b of document.querySelectorAll('[data-style]')) b.setAttribute('aria-pressed', String(b.dataset.style === s));
+  $('rhythm-sub').textContent = STYLES[s].rhythm;
+  $('np-side').textContent = `${STYLES[s].side} · ${STYLES[s].name}`;
+  if (fromUser) {
+    try {
+      localStorage.setItem(STYLE_KEY, s);
+    } catch {
+      // private window or blocked storage: the choice just won't be remembered
+    }
+    if (!music.playing) togglePlay();
+  }
 }
 
 async function togglePlay() {
@@ -277,7 +307,7 @@ function playBus(item) {
   const pan = ((b.x - x0) / (x1 - x0 || 1)) * 1.6 - 0.8;
   const moving = !BusFeed.isStanding(b);
   const note = music.playBus({ moving, degree, eventPerf: item.atPerf, pan });
-  const label = note ? note.label : moving ? music.busLabel(degree) : 'Tham';
+  const label = note ? note.label : music.busLabel(degree);
   const stop = nearestStop(b.x, b.y);
   const who = b.route ? `Route ${b.route}` : 'A bus';
   visuals.push({
@@ -288,8 +318,8 @@ function playBus(item) {
     row: { time: TIME(b.ts), who: b.route || 'BUS', where: stop, note: label, kind: moving ? 'bus' : 'stand' },
     title: moving ? `${who} near ${stop}` : `${who} standing near ${stop}`,
     sub: moving
-      ? `Santoor · ${label}${b.speed != null ? ` · ${Math.round(b.speed)} km/h` : ''}`
-      : `Mridangam · ${label} · ${b.speed != null && b.speed > 0.5 ? `crawling at ${Math.round(b.speed)} km/h` : 'not moving'}`,
+      ? `${BUS_VOICES.moving.instrument} · ${label}${b.speed != null ? ` · ${Math.round(b.speed)} km/h` : ''}`
+      : `${BUS_VOICES.standing.instrument} · ${label} · ${b.speed != null && b.speed > 0.5 ? `crawling at ${Math.round(b.speed)} km/h` : 'not moving'}`,
   });
 }
 
