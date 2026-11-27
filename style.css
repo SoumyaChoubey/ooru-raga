@@ -162,7 +162,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .poster .b2 { left: 28%; top: 70px; width: 62%; height: 30%; opacity: 0.55; }
 .poster .b3 { left: 3%; top: 54%; width: 28%; height: 36%; opacity: 0.6; }
 .poster-top { position: relative; display: flex; justify-content: space-between; align-items: start; gap: 10px; }
-.poster-top .arrow { font: 400 30px/1 var(--display); }
+.share { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border: 2px solid var(--ink); border-radius: 999px; background: var(--cream); font: 400 18px/1 var(--display); text-transform: uppercase; letter-spacing: 0.03em; }
+.share span:first-child { font-size: 22px; }
+.share:hover { background: var(--ink); color: var(--cream); }
+.share-link { position: relative; width: 100%; margin-top: 10px; padding: 6px 8px; border: 2px solid var(--ink); border-radius: 4px; background: var(--cream); font: 500 13px var(--body); color: var(--ink); }
 .poster-top .caps { text-align: right; }
 .poster-top b { display: block; font: 400 22px/1.05 var(--display); letter-spacing: 0.02em; }
 .poster-top .scale { display: block; letter-spacing: 0.06em; margin-top: 2px; }

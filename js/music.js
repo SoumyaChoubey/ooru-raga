@@ -45,6 +45,9 @@ export const LINE_VOICES = {
 };
 
 const SA_MIDI = 50; // D3, about 147 Hz. Change this one number to retune everything.
+// A twentieth of a second of silence. Looping it in an <audio> element tells iPhones this page is
+// playing music, so sound still comes out when the ring/silent switch is on silent.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
 const MAX_NOTES_PER_STEP = 2; // per voice, so busy areas stay musical
 const ADI_TALA_ACCENTS = [1, 0, 0, 0, 0.7, 0, 0.7, 0]; // 4 + 2 + 2 beats
 const SWING = 0.17; // jazz: off-beat eighths land at two thirds of the beat
@@ -151,6 +154,7 @@ export class Music {
   async start() {
     if (!this.ctx) this.#build();
     clearTimeout(this.suspendTimer);
+    this.#keepAwake(true);
     await this.ctx.resume();
     this.playing = true;
     const now = this.ctx.currentTime;
@@ -164,8 +168,25 @@ export class Music {
   pause() {
     if (!this.ctx) return;
     this.playing = false;
+    this.#keepAwake(false);
     this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
     this.suspendTimer = setTimeout(() => this.ctx.suspend(), 450);
+  }
+
+  /** Plays (or stops) the silent loop and asks for media playback, so phones treat this as music. */
+  #keepAwake(on) {
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch {
+      // older browsers: nothing to do
+    }
+    if (!this.silentLoop) {
+      this.silentLoop = new Audio(SILENT_WAV);
+      this.silentLoop.loop = true;
+      this.silentLoop.setAttribute('playsinline', '');
+    }
+    if (on) this.silentLoop.play().catch(() => {});
+    else this.silentLoop.pause();
   }
 
   /** Finds a free eighth-note slot on the pulse at or after `eventPerf`. Returns its audio time. */

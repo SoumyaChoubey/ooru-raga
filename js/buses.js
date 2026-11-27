@@ -10,7 +10,7 @@
 import { ORIGIN } from '../lib/bus-feed.js';
 import { toKm } from './areas.js';
 
-export const POLL_MS = 30_000;
+export const POLL_MS = 45_000; // buses report every 30 s to 3 min, so 45 s feels live and stretches the free plan
 const HIDDEN_POLL_MS = 60_000;
 const STALE_AFTER_S = 600; // the feed counts as paused if its newest position is this old
 const STANDING_KMH = 6;

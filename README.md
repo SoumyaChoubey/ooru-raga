@@ -26,7 +26,7 @@ All sound is synthesised in the listener's browser. There are no audio files and
               /api/buses relay (functions/api/buses.js, on Cloudflare)
                         │  shrunk to ~45 KB, one copy shared by everyone
                         ▼
-      every listener's browser: polls every 30 s, draws the record, makes the music
+      every listener's browser: polls every 45 s, draws the record, makes the music
 ```
 
 - **The website is static files** on Cloudflare Pages: served from Cloudflare's servers worldwide, with
@@ -37,19 +37,36 @@ All sound is synthesised in the listener's browser. There are no audio files and
 - **Nothing breaks if the bus feed stops.** The relay keeps serving the last good copy, the page marks
   it "PAUSED since 17:31", and the metro and tanpura play on. If the relay can't be reached at all, the
   page shows a saved snapshot of buses, clearly labelled "SAMPLE".
-- **Listeners use little data:** about 45 KB every 30 seconds while the tab is open or playing, and
+- **Listeners use little data:** about 45 KB every 45 seconds while the tab is open or playing, and
   nothing while a silent tab sits in the background.
 
 ### Free plan limits, and when to pay $5
 
 Static pages on Cloudflare Pages are unlimited. The relay is a Cloudflare "Function", and the free plan
-allows **100,000 relay requests a day**. Each listener makes about 120 an hour, so that's roughly
-**800 listener-hours a day** (for example, 1,600 people listening for half an hour each).
+allows **100,000 relay requests a day**. Each listener makes about 80 an hour, so that's roughly
+**1,250 listener-hours a day** (for example, 2,500 people listening for half an hour each).
 
 If a launch goes bigger than that, the site still loads and plays the metro, but buses show as paused
 until the next day. To remove that limit, turn on **Workers Paid** in the Cloudflare dashboard
-($5 a month, 10 million requests a month included, about 80,000 listener-hours). It also lifts the
+($5 a month, 10 million requests a month included, about 125,000 listener-hours). It also lifts the
 per-request processing limit, which the relay comes close to on the free plan.
+
+## Launch checklist
+
+1. **Code on GitHub.** The repository holds everything Cloudflare needs.
+2. **Connect it to Cloudflare Pages** (steps below). You get a free address such as
+   `https://ooru-raga.pages.dev`, with no domain needed.
+3. **Make link previews work everywhere.** In `index.html`, change `content="og-image.jpg"` on the
+   `og:image` line to the full address, for example `https://ooru-raga.pages.dev/og-image.jpg`.
+   WhatsApp, Instagram and X need the full address to show the picture.
+4. **Turn on visitor counts (optional, free, no cookies).** In Cloudflare, open the Pages project,
+   then **Metrics**, and enable **Web Analytics**.
+5. **Check it on a phone.** Open the address, press Start listening, try Side B, share an area to
+   yourself on WhatsApp and check the preview appears.
+6. **For a big launch,** consider Workers Paid ($5 for the month), so live buses don't pause if the
+   free daily limit runs out.
+
+People can also add it to their home screen; it has its own icon and opens full screen.
 
 ## Put it online (Cloudflare Pages, free)
 
@@ -112,6 +129,8 @@ node scripts/make_sample.mjs
 
 ```
 index.html               the page
+og-image.jpg, icons/     the picture shown when the link is shared, and home-screen icons
+manifest.webmanifest     lets people add the site to their phone's home screen
 style.css                colours, fonts and layout
 _headers, wrangler.toml  Cloudflare Pages settings (caching, and where the site lives)
 functions/api/buses.js   the live bus relay that runs on Cloudflare

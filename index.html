@@ -8,8 +8,16 @@
 <meta name="description" content="Bengaluru, played live. Pick an area and hear its BMTC buses and metro trains as Carnatic music, as they move.">
 <meta name="theme-color" content="#f2e6cf">
 <meta property="og:title" content="Ooru Raga · ಊರು ರಾಗ">
-<meta property="og:description" content="Bengaluru, played live. Pick an area and hear its buses and metro trains as music.">
+<meta property="og:description" content="Bengaluru, played live. Pick an area and hear its buses and metro trains as Carnatic music.">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Ooru Raga">
+<meta property="og:image" content="og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Bengaluru drawn as a vinyl record, with live buses and the metro lines, under the words Ooru Raga">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233456a6'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23f5b301'/%3E%3Ccircle cx='32' cy='32' r='20' fill='%23141114'/%3E%3Ccircle cx='32' cy='32' r='5' fill='%23e0301e'/%3E%3C/svg%3E">
 <link rel="preload" href="fonts/anton-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
@@ -53,11 +61,12 @@
     <article id="poster" class="poster">
       <span class="blk b1"></span><span class="blk b2"></span><span class="blk b3"></span>
       <div class="poster-top">
-        <span class="arrow" aria-hidden="true">➜</span>
+        <button id="share" class="share" type="button" aria-label="Share a link to this area"><span aria-hidden="true">➜</span> <span id="share-label">Share</span></button>
         <p class="caps"><span id="area-index">Area</span><b id="area-raga">Raga</b><span id="area-scale" class="scale"></span></p>
       </div>
       <p id="area-akshara" class="akshara" lang="kn" aria-hidden="true"></p>
       <div class="poster-name"><h2 id="area-name">&nbsp;</h2><span id="area-kn" class="kn" lang="kn"></span></div>
+      <input id="share-link" class="share-link" type="text" readonly hidden aria-label="Link to this area">
       <dl class="facts">
         <div><dt>Buses now</dt><dd id="f-buses">–</dd></div>
         <div><dt>Traffic km/h</dt><dd id="f-traffic">–</dd></div>
@@ -132,7 +141,7 @@
 
 <footer class="wrap credits">
   <p>Live bus positions from BMTC, via <a href="https://maps.reclaim.city/bmtc/" target="_blank" rel="noopener">reclaim.city</a>. Bus routes and stops from <a href="https://github.com/Vonter/bmtc-gtfs" target="_blank" rel="noopener">bmtc-gtfs</a> and the metro timetable from <a href="https://github.com/Vonter/bmrcl-gtfs" target="_blank" rel="noopener">bmrcl-gtfs</a>, both by Vonter under the <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">ODbL</a>, with track shapes © OpenStreetMap contributors. Inspired by <a href="https://www.delhimetrojazz.com/" target="_blank" rel="noopener">Delhi Metro Jazz</a>.</p>
-  <p>An unofficial art project, not affiliated with BMTC or BMRCL, and not a journey planner. All sound is made in your browser.</p>
+  <p>An unofficial art project, not affiliated with BMTC or BMRCL, and not a journey planner. All sound is made in your browser. No sign-in, no cookies.</p>
 </footer>
 
 <script type="module" src="js/main.js"></script>

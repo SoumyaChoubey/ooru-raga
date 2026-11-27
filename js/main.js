@@ -128,6 +128,7 @@ function renderArea() {
   $('np-area').textContent = area.name;
   $('board-title').textContent = `Just played in ${area.name}`.toUpperCase();
   document.title = `${area.name} · Ooru Raga`;
+  updateMediaSession();
 }
 
 function buildPicker() {
@@ -177,9 +178,10 @@ function buildPicker() {
 function bindControls() {
   $('start').addEventListener('click', togglePlay);
   $('play').addEventListener('click', togglePlay);
-  const step = (d) => selectArea(areas.list[(area.index + d + areas.list.length) % areas.list.length].id, { fromUser: true });
-  $('prev').addEventListener('click', () => step(-1));
-  $('next').addEventListener('click', () => step(1));
+  $('prev').addEventListener('click', () => stepArea(-1));
+  $('next').addEventListener('click', () => stepArea(1));
+  $('share').addEventListener('click', shareArea);
+  bindMediaKeys();
   $('volume').addEventListener('input', (e) => music.setVolume(Number(e.target.value) / 100));
   for (const b of document.querySelectorAll('[data-style]')) b.addEventListener('click', () => setStyle(b.dataset.style, true));
   for (const t of document.querySelectorAll('[data-layer]')) {
@@ -222,6 +224,71 @@ function bindControls() {
   canvas.addEventListener('pointerleave', () => (tip.hidden = true));
 }
 
+function stepArea(d) {
+  selectArea(areas.list[(area.index + d + areas.list.length) % areas.list.length].id, { fromUser: true });
+}
+
+/** Share a link straight to this area: the phone's share sheet, or copy the link. */
+async function shareArea() {
+  const url = `${location.origin}${location.pathname}#${area.id}`;
+  const text = `Listen to ${area.name} on Ooru Raga: Bengaluru's buses and metro, played live as Carnatic music.`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: `${area.name} · Ooru Raga`, text, url });
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return; // they closed the share sheet
+    }
+  }
+  const label = $('share-label');
+  try {
+    await navigator.clipboard.writeText(url);
+    label.textContent = 'Link copied';
+  } catch {
+    const field = $('share-link');
+    field.value = url;
+    field.hidden = false;
+    field.select();
+    label.textContent = 'Copy this link';
+  }
+  clearTimeout(shareArea.timer);
+  shareArea.timer = setTimeout(() => {
+    label.textContent = 'Share';
+    $('share-link').hidden = true;
+  }, 4000);
+}
+
+/** Lock-screen and headphone controls on phones: play, pause, next and previous area. */
+function bindMediaKeys() {
+  if (!('mediaSession' in navigator)) return;
+  const on = (action, fn) => {
+    try {
+      navigator.mediaSession.setActionHandler(action, fn);
+    } catch {
+      // this browser doesn't offer that button
+    }
+  };
+  on('play', () => !music.playing && togglePlay());
+  on('pause', () => music.playing && togglePlay());
+  on('previoustrack', () => stepArea(-1));
+  on('nexttrack', () => stepArea(1));
+}
+
+function updateMediaSession() {
+  if (!('mediaSession' in navigator) || !area || typeof MediaMetadata === 'undefined') return;
+  const side = STYLES[music.style];
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: `${area.name} · Raga ${RAGAS[area.raga].name}`,
+    artist: 'Ooru Raga',
+    album: `${side.side} · ${side.name}`,
+    artwork: [
+      { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+  });
+  navigator.mediaSession.playbackState = music.playing ? 'playing' : 'paused';
+}
+
 // Side A (Carnatic) or Side B (Carnatic jazz). Remembered in this browser only.
 function savedStyle() {
   try {
@@ -239,6 +306,7 @@ function setStyle(style, fromUser = false) {
   for (const b of document.querySelectorAll('[data-style]')) b.setAttribute('aria-pressed', String(b.dataset.style === s));
   $('rhythm-sub').textContent = STYLES[s].rhythm;
   $('np-side').textContent = `${STYLES[s].side} · ${STYLES[s].name}`;
+  updateMediaSession();
   if (fromUser) {
     try {
       localStorage.setItem(STYLE_KEY, s);
@@ -264,6 +332,7 @@ async function togglePlay() {
   b.setAttribute('aria-label', music.playing ? 'Pause' : 'Play');
   metroUpTo = null;
   if (music.playing) feed.schedule();
+  updateMediaSession();
 }
 
 // ------------------------------------------------------------ live buses
@@ -435,7 +504,7 @@ function updateUi(ist, trains, now) {
   const since = feed.feedTime ? TIME(feed.feedTime) : '';
   const [main, sub, note] = {
     loading: ['…', 'Buses', 'Finding live buses…'],
-    live: ['LIVE', 'BMTC GPS', 'Live bus positions, about a minute behind'],
+    live: ['LIVE', 'BMTC GPS', 'Live bus positions, a minute or two behind'],
     paused: ['PAUSED', `since ${since}`, `The live bus feed has paused since ${since} IST. The metro plays on.`],
     sample: ['SAMPLE', since, `Live buses aren't reachable here, so these are buses from ${since} IST on ${dayOf(feed.feedTime)}.`],
     error: ['OFFLINE', 'Metro only', 'Bus positions could not be loaded. The metro plays on.'],
