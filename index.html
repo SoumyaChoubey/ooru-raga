@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Metro Raga</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Listen to Bengaluru's Namma Metro. Every train that reaches a station plays a note, following today's real timetable.">
+<meta name="theme-color" content="#0d1120">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1120'/%3E%3Cpath d='M14 22h36' stroke='%23c65cb3' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M14 32h28' stroke='%2334c27a' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M14 42h20' stroke='%23f2d23c' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Kannada:wdth,wght@75..125,400..700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div>
+        <h1>Metro Raga <span lang="kn">ಮೆಟ್ರೋ ರಾಗ</span></h1>
+        <p class="tagline">Bengaluru's metro timetable, played as music</p>
+      </div>
+    </div>
+    <div class="clock">
+      <span id="mode-pill" class="pill" data-mode="live"><i aria-hidden="true"></i><span id="mode-text">Live</span></span>
+      <time id="clock" class="clock-time">--:--:--</time>
+      <span id="clock-day" class="clock-day">IST</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap app">
+  <section class="stage" aria-label="Map of Namma Metro with trains moving to the timetable">
+    <canvas id="map" role="img" aria-label="Purple, Green and Yellow lines of Namma Metro, with trains shown as moving dots"></canvas>
+    <div id="tooltip" class="tooltip" role="status" hidden></div>
+
+    <div id="start-overlay" class="start-overlay">
+      <button id="start" class="btn-primary btn-big" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        Start listening
+      </button>
+      <p>Headphones help. Trains to the west play on the left, east on the right.</p>
+    </div>
+
+    <div id="resting" class="resting" hidden>
+      <p class="resting-title">The metro is resting</p>
+      <p id="resting-text" class="resting-text">No trains are running right now.</p>
+      <button id="resting-jump" class="btn-quiet" type="button">Hear the 9:00 rush</button>
+    </div>
+
+    <p class="stage-note"><span class="ring-key" aria-hidden="true"></span>Rings are 5 km from Majestic. Further out, higher note.</p>
+  </section>
+
+  <aside class="panel" aria-label="Listening controls">
+    <div class="player">
+      <button id="play" class="play" type="button" aria-pressed="false" aria-label="Play">
+        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+      </button>
+      <div class="player-text">
+        <p id="status" class="status">Loading the timetable…</p>
+        <p id="raga-now" class="raga-now">Raga Mohanam · S R₂ G₃ P D₂</p>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2 class="label">The orchestra <span class="label-hint">tap a line to mute it</span></h2>
+      <div id="lines" class="lines"></div>
+    </div>
+
+    <div class="group">
+      <h2 class="label" id="speed-label">Speed</h2>
+      <div id="speed" class="seg" role="group" aria-labelledby="speed-label">
+        <button type="button" data-speed="1" aria-pressed="true">Real time</button>
+        <button type="button" data-speed="5" aria-pressed="false">5×</button>
+        <button type="button" data-speed="20" aria-pressed="false">20×</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2 class="label" id="jump-label">Jump to</h2>
+      <div id="jump" class="seg seg-grid" role="group" aria-labelledby="jump-label">
+        <button type="button" data-time="now">Now</button>
+        <button type="button" data-time="08:45">Morning rush · 8:45</button>
+        <button type="button" data-time="18:30">Evening rush · 18:30</button>
+        <button type="button" data-time="23:20">Last trains · 23:20</button>
+      </div>
+    </div>
+
+    <div class="group settings">
+      <div class="field">
+        <label class="label" for="raga">Raga</label>
+        <select id="raga"></select>
+      </div>
+      <div class="field">
+        <label class="label" for="volume">Volume</label>
+        <input id="volume" type="range" min="0" max="100" value="80">
+      </div>
+      <label class="check" for="drone"><input id="drone" type="checkbox" checked> Tanpura drone</label>
+    </div>
+
+    <div class="group">
+      <h2 class="label">Just played</h2>
+      <ol id="log" class="log" aria-label="Most recent station notes"></ol>
+    </div>
+  </aside>
+</main>
+
+<section class="wrap about" aria-labelledby="about-title">
+  <h2 id="about-title" class="about-title">How the metro makes music</h2>
+  <ol class="steps">
+    <li>
+      <h3>The timetable</h3>
+      <p>BMRCL publishes a timetable for each line. A community dataset turns those into a standard format listing every trip of the day, about 900 on a weekday.</p>
+    </li>
+    <li>
+      <h3>The trains</h3>
+      <p>Your browser works out where each of today's trains should be at this moment in Bengaluru, and moves it along the real track. It follows the timetable, not live GPS, so real trains can be a few minutes off.</p>
+    </li>
+    <li>
+      <h3>The notes</h3>
+      <p>When a train reaches a station, that station's note plays on its line's instrument. Notes rise the further a station is from Majestic (RV Road on the Yellow Line), so trains heading into the city fall towards Sa, the home note.</p>
+    </li>
+  </ol>
+
+  <div class="about-grid">
+    <div class="about-block">
+      <h3>The orchestra</h3>
+      <div class="table-wrap">
+        <table class="orchestra">
+          <thead><tr><th scope="col">Line</th><th scope="col">Instrument</th><th scope="col">Home note at</th><th scope="col">Stations</th></tr></thead>
+          <tbody id="orchestra-rows"></tbody>
+        </table>
+      </div>
+      <p>Underneath, a tanpura holds Sa and Pa (or Ma, for ragas without Pa). Majestic and RV Road, where lines meet, add a soft gong.</p>
+    </div>
+    <div class="about-block">
+      <h3>The ragas</h3>
+      <p>All three lines play in the same raga, so their notes always fit together. Each one uses five notes, which keeps chance meetings between trains consonant. <strong>Auto</strong> moves through Mohanam in the morning, Madhyamavati at midday, Hamsadhwani for the evening rush and Shivaranjani at night.</p>
+      <p>Notes snap to a gentle 80 bpm pulse. At 20× speed some arrivals share a beat or wait for the next one.</p>
+    </div>
+    <div class="about-block">
+      <h3>Data and credits</h3>
+      <p>Timetable and stations: <a href="https://github.com/Vonter/bmrcl-gtfs" target="_blank" rel="noopener">bmrcl-gtfs</a> by Vonter, under the <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">ODbL</a>. It is built from timetables on the <a href="https://www.bmrc.co.in/metro-timings/" target="_blank" rel="noopener">BMRCL website</a> and track shapes from © OpenStreetMap contributors.</p>
+      <p id="data-version">Timetable data version: loading.</p>
+      <p>Inspired by <a href="https://www.delhimetrojazz.com/" target="_blank" rel="noopener">Delhi Metro Jazz</a>.</p>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap foot">
+  <p>An unofficial art project. Not affiliated with BMRCL. Not a journey planner: for real train times, check BMRCL.</p>
+</footer>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
