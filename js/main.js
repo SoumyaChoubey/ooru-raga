@@ -1,193 +1,222 @@
-// main.js - connects the clock, the timetable, the music and the map, and runs the controls.
-import { Timetable, serviceMoment, istNow, formatClock, formatServiceSecs } from './timetable.js';
-import { Music, RAGAS, LINE_VOICES, autoRaga, ragaScale } from './music.js';
-import { MetroMap } from './map.js';
+// main.js - connects the areas, live buses, metro timetable, music and the record, and runs the page.
+import { Timetable, serviceMoment, istNow, formatClock, IST_OFFSET_MS } from './timetable.js';
+import { Music, RAGAS, LINE_VOICES, BUS_DEGREES, ragaScale, tempoForSpeed } from './music.js';
+import { Areas, toKm } from './areas.js';
+import { BusFeed, POLL_MS } from './buses.js';
+import { Record } from './record.js';
 
 const $ = (id) => document.getElementById(id);
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const LOG_LENGTH = 6;
-const MORNING_RUSH_SECS = 8.75 * 3600;
-
-// ------------------------------------------------------------ the simulation clock
-// Normally this is just Bengaluru time. "Jump to" and the speed buttons move it.
-const clock = { anchorPerf: performance.now(), anchorSim: istNow(), speed: 1 };
-const simAt = (perf) => clock.anchorSim + (perf - clock.anchorPerf) * clock.speed;
-const perfAt = (sim) => clock.anchorPerf + (sim - clock.anchorSim) / clock.speed;
-const isLive = () => clock.speed === 1 && Math.abs(simAt(performance.now()) - istNow()) < 5000;
+const DEFAULT_AREA = 'jayanagar';
+const BOARD_ROWS = 6;
+const FRESH_FIX_S = 15 * 60; // a bus counts as "in the area now" if it reported in the last 15 minutes
+const REGIONS = ['Central', 'North', 'East', 'South', 'West'];
+const TIME = (sec) => formatClock(sec * 1000 + IST_OFFSET_MS, false);
 
 let tt;
-let map;
+let areas;
+let record;
 let music;
-let ragaChoice = 'auto';
-let scheduledUpTo = null; // simulation time up to which arrivals have been handed to the music
+let feed;
+let area = null;
+let areaStops = [];
+const stopCache = new Map();
+const queue = []; // bus pings waiting for their moment
+const visuals = []; // notes waiting to light up on the record
+const board = [];
+let boardDirty = true;
+let metroUpTo = null; // IST ms up to which metro arrivals have been handled
 let lastUi = 0;
-let logDirty = true;
-const pending = []; // arrivals waiting for their moment to light up on the map
-const log = [];
-const lastStation = [];
+let traffic = { speed: null, samples: 0, buses: 0 };
 
-function setClock({ sim, speed } = {}) {
-  const now = performance.now();
-  const current = simAt(now);
-  clock.anchorPerf = now;
-  clock.anchorSim = sim ?? current;
-  clock.speed = speed ?? clock.speed;
-  scheduledUpTo = null;
-  pending.length = 0;
-  if (sim !== undefined) {
-    // A jump: notes from the old time would be confusing in the list.
-    log.length = 0;
-    lastStation.length = 0;
-    logDirty = true;
-  }
-  updateSpeedButtons();
-  lastUi = 0;
+async function getJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  return res.json();
 }
 
-// ------------------------------------------------------------ start-up
 async function init() {
-  let data;
+  let metroData;
+  let areaData;
   try {
-    const res = await fetch('data/metro.json');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    data = await res.json();
+    [metroData, areaData] = await Promise.all([getJson('data/metro.json'), getJson('data/areas.json')]);
   } catch (err) {
-    showLoadError();
     console.error(err);
+    $('start').hidden = true;
+    $('feed-note').textContent = 'The map did not load. If you opened index.html from your computer, run a local web server (see the README).';
     return;
   }
-  tt = new Timetable(data);
+  tt = new Timetable(metroData);
+  areas = new Areas(areaData);
   music = new Music(tt.lines);
-  map = new MetroMap($('map'), tt);
+  record = new Record($('record'), { metro: metroData, areas });
+  $('m-areas').textContent = areas.list.length;
+  $('picker-count').textContent = areas.list.length;
 
-  buildLineButtons();
-  buildRagaSelect();
-  buildOrchestraTable();
-  describeData();
+  buildPicker();
   bindControls();
+  feed = new BusFeed({ onSnapshot, isPlaying: () => music.playing });
+  window.addEventListener('hashchange', () => selectArea(location.hash.slice(1)));
+  selectArea(location.hash.slice(1) || DEFAULT_AREA);
+  feed.start();
   document.fonts?.ready.then(() => {
-    map.readColors();
-    map.renderStatic();
+    record.readColours();
+    record.renderStatic();
   });
-
   setInterval(tick, 100);
   requestAnimationFrame(frame);
 }
 
-function showLoadError() {
-  $('start-overlay').hidden = true;
-  const box = document.createElement('div');
-  box.className = 'load-error';
-  box.innerHTML =
-    '<p>The timetable did not load.</p><p>If you opened index.html straight from your computer, start a local web server instead (see the README).</p>';
-  document.querySelector('.stage').append(box);
-  $('status').textContent = 'Timetable not loaded';
+// ------------------------------------------------------------ choosing an area
+
+function selectArea(id, { fromUser = false } = {}) {
+  const next = areas.byId.get(id) || areas.byId.get(DEFAULT_AREA);
+  if (next === area) return;
+  area = next;
+  if (location.hash.slice(1) !== area.id) history.replaceState(null, '', `#${area.id}`);
+  music.setRaga(area.raga);
+  record.setSelected(area);
+  board.length = 0;
+  boardDirty = true;
+  visuals.length = 0; // the queue keeps every area's buses, so a new area starts playing straight away
+  areaStops = [];
+  loadStops(area);
+  updateTraffic();
+  renderArea();
+  setNowPlaying(`Listening to ${area.name}`, `Raga ${RAGAS[area.raga].name}. Buses play santoor and mridangam, trains play veena.`);
+  for (const b of document.querySelectorAll('[data-area]')) b.setAttribute('aria-pressed', String(b.dataset.area === area.id));
+  if (fromUser && !music.playing) togglePlay();
 }
 
-const lineColorVar = (li) => `var(--line-${tt.lines[li].id.toLowerCase()})`;
-const stationName = (si) => tt.stations[si].short;
+async function loadStops(a) {
+  if (!stopCache.has(a.id)) {
+    try {
+      const rows = await getJson(`data/stops/${a.id}.json`);
+      stopCache.set(a.id, rows.map(([name, kn, lat, lon]) => ({ name, kn, at: toKm(lat, lon) })));
+    } catch {
+      stopCache.set(a.id, []);
+    }
+  }
+  if (a === area) areaStops = stopCache.get(a.id);
+}
 
-function buildLineButtons() {
-  const wrap = $('lines');
-  tt.lines.forEach((line, li) => {
-    const voice = LINE_VOICES[line.id];
+function nearestStop(x, y) {
+  let best = null;
+  let bestD = 0.6; // km
+  for (const s of areaStops) {
+    const d = Math.hypot(s.at[0] - x, s.at[1] - y);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best ? best.name : area.name;
+}
+
+function renderArea() {
+  const r = RAGAS[area.raga];
+  const poster = $('poster');
+  poster.style.setProperty('--area', area.colour);
+  $('area-index').textContent = `Area ${String(area.index + 1).padStart(2, '0')} / ${areas.list.length}`;
+  $('area-raga').textContent = `Raga ${r.name}`;
+  $('area-scale').textContent = ragaScale(r);
+  $('area-akshara').textContent = area.akshara;
+  $('area-name').textContent = area.name;
+  $('area-kn').textContent = area.kn;
+  $('f-metro').textContent = area.stations.length;
+  $('np-area').textContent = area.name;
+  $('board-title').textContent = `Just played in ${area.name}`.toUpperCase();
+  document.title = `${area.name} · Ooru Raga`;
+}
+
+function buildPicker() {
+  const featured = $('featured');
+  for (const a of areas.list.filter((x) => x.featured)) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'line-btn';
-    b.style.setProperty('--c', lineColorVar(li));
-    b.setAttribute('aria-pressed', 'true');
-    b.innerHTML = `<span class="swatch"></span>
-      <span class="name"></span>
-      <span class="meta"><b id="last-${li}">Waiting</b><span id="count-${li}">0 trains</span></span>`;
-    b.querySelector('.name').append(line.name, Object.assign(document.createElement('span'), { className: 'inst', textContent: voice.instrument }));
-    b.addEventListener('click', () => {
-      const on = b.getAttribute('aria-pressed') !== 'true';
-      b.setAttribute('aria-pressed', String(on));
-      music.setLineMuted(li, !on);
-    });
-    wrap.append(b);
+    b.className = 'card';
+    b.dataset.area = a.id;
+    b.style.setProperty('--card', a.colour);
+    b.innerHTML = '<span class="g" lang="kn"></span><b></b><small></small>';
+    b.querySelector('.g').textContent = a.akshara;
+    b.querySelector('b').textContent = a.name;
+    b.querySelector('small').textContent = RAGAS[a.raga].name;
+    featured.append(b);
+  }
+  const regions = $('regions');
+  for (const region of REGIONS) {
+    const col = document.createElement('div');
+    col.className = 'region';
+    const h = document.createElement('h3');
+    h.textContent = region;
+    const ul = document.createElement('ul');
+    for (const a of areas.list.filter((x) => x.region === region).sort((p, q) => p.name.localeCompare(q.name))) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.area = a.id;
+      b.innerHTML = '<span class="chip-dot"></span><span class="chip-name"></span><span class="chip-kn" lang="kn"></span>';
+      b.style.setProperty('--card', a.colour);
+      b.querySelector('.chip-name').textContent = a.name;
+      b.querySelector('.chip-kn').textContent = a.kn;
+      li.append(b);
+      ul.append(li);
+    }
+    col.append(h, ul);
+    regions.append(col);
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-area]');
+    if (!b) return;
+    selectArea(b.dataset.area, { fromUser: true });
+    if (b.closest('.picker')) $('record').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
-}
-
-function buildRagaSelect() {
-  const sel = $('raga');
-  sel.append(new Option('Auto · changes with the time of day', 'auto'));
-  for (const [key, r] of Object.entries(RAGAS)) sel.append(new Option(`${r.name} · ${ragaScale(r)}`, key));
-  sel.value = ragaChoice;
-}
-
-function buildOrchestraTable() {
-  const body = $('orchestra-rows');
-  tt.lines.forEach((line, li) => {
-    const tr = document.createElement('tr');
-    const cells = [line.name, LINE_VOICES[line.id].instrument, stationName(line.stations[line.anchor]), String(line.stations.length)];
-    cells.forEach((text, i) => {
-      const td = document.createElement('td');
-      if (i === 0) {
-        const dot = document.createElement('span');
-        dot.className = 'dot';
-        dot.style.setProperty('--c', lineColorVar(li));
-        td.append(dot);
-      }
-      td.append(text);
-      tr.append(td);
-    });
-    body.append(tr);
-  });
-}
-
-function describeData() {
-  const fmt = (k) => `${Number(k.slice(6))} ${MONTHS[Number(k.slice(4, 6)) - 1]} ${k.slice(0, 4)}`;
-  const { meta } = tt;
-  $('data-version').textContent = `This copy of the timetable is valid from ${fmt(meta.validFrom)} to ${fmt(meta.validTo)} and covers the ${tt.lines
-    .map((l) => l.name.replace(' Line', ''))
-    .join(', ')
-    .replace(/, ([^,]*)$/, ' and $1')} lines (${tt.stations.length} stations).`;
 }
 
 function bindControls() {
   $('start').addEventListener('click', togglePlay);
   $('play').addEventListener('click', togglePlay);
-
-  $('speed').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-speed]');
-    if (b) setClock({ speed: Number(b.dataset.speed) });
-  });
-
-  $('jump').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-time]');
-    if (!b) return;
-    if (b.dataset.time === 'now') return setClock({ sim: istNow(), speed: 1 });
-    const [h, m] = b.dataset.time.split(':').map(Number);
-    const today = serviceMoment(simAt(performance.now()));
-    setClock({ sim: today.dayStartMs + (h * 3600 + m * 60) * 1000 });
-  });
-
-  $('resting-jump').addEventListener('click', () => {
-    const m = serviceMoment(simAt(performance.now()));
-    const day = tt.day(m);
-    const nextDay = day.firstStart !== null && m.secs < day.firstStart ? 0 : 1;
-    setClock({ sim: m.dayStartMs + nextDay * 86400000 + MORNING_RUSH_SECS * 1000 });
-  });
-
-  $('raga').addEventListener('change', (e) => {
-    ragaChoice = e.target.value;
-    applyRaga();
-    lastUi = 0;
-  });
+  const step = (d) => selectArea(areas.list[(area.index + d + areas.list.length) % areas.list.length].id, { fromUser: true });
+  $('prev').addEventListener('click', () => step(-1));
+  $('next').addEventListener('click', () => step(1));
   $('volume').addEventListener('input', (e) => music.setVolume(Number(e.target.value) / 100));
-  $('drone').addEventListener('change', (e) => music.setDrone(e.target.checked));
+  for (const t of document.querySelectorAll('[data-layer]')) {
+    t.addEventListener('click', () => {
+      const on = t.getAttribute('aria-pressed') !== 'true';
+      t.setAttribute('aria-pressed', String(on));
+      music.setLayer(t.dataset.layer, on);
+    });
+  }
 
-  const canvas = $('map');
-  let hideTimer;
-  canvas.addEventListener('pointermove', (e) => e.pointerType === 'mouse' && showTip(e));
-  canvas.addEventListener('pointerleave', () => ($('tooltip').hidden = true));
-  canvas.addEventListener('pointerdown', (e) => {
-    showTip(e);
-    clearTimeout(hideTimer);
-    if (e.pointerType !== 'mouse') hideTimer = setTimeout(() => ($('tooltip').hidden = true), 3500);
+  const canvas = $('record');
+  const tip = $('tooltip');
+  const where = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top, r];
+  };
+  canvas.addEventListener('click', (e) => {
+    const [x, y] = where(e);
+    const a = record.areaAt(x, y);
+    if (a) selectArea(a.id, { fromUser: true });
   });
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const [x, y, r] = where(e);
+    const a = record.areaAt(x, y);
+    canvas.style.cursor = a ? 'pointer' : 'default';
+    if (!a) {
+      tip.hidden = true;
+      return;
+    }
+    const buses = feed.buses.size ? [...feed.buses.values()].filter((b) => b.area === a.index).length : 0;
+    tip.innerHTML = '<b></b><span class="kn" lang="kn"></span><small></small>';
+    tip.querySelector('b').textContent = a.name;
+    tip.querySelector('.kn').textContent = a.kn;
+    tip.querySelector('small').textContent = `Raga ${RAGAS[a.raga].name} · ${buses} buses · ${a.stations.length} metro stops`;
+    tip.hidden = false;
+    tip.style.left = `${Math.min(x + 16, r.width - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${Math.min(y + 16, r.height - tip.offsetHeight - 8)}px`;
+  });
+  canvas.addEventListener('pointerleave', () => (tip.hidden = true));
 }
 
 async function togglePlay() {
@@ -196,199 +225,233 @@ async function togglePlay() {
     else await music.start();
   } catch (err) {
     console.error(err);
-    $('status').textContent = 'This browser could not start audio';
+    setNowPlaying('Sound could not start', 'This browser blocked audio. Try tapping play again.');
     return;
   }
-  $('start-overlay').hidden = true;
+  $('start').hidden = true;
   const b = $('play');
   b.setAttribute('aria-pressed', String(music.playing));
   b.setAttribute('aria-label', music.playing ? 'Pause' : 'Play');
-  scheduledUpTo = null;
+  metroUpTo = null;
+  if (music.playing) feed.schedule();
+}
+
+// ------------------------------------------------------------ live buses
+
+function onSnapshot({ pings, windowStart, windowEnd }) {
+  for (const b of feed.buses.values()) {
+    const a = areas.at(b.x, b.y);
+    b.area = a ? a.index : -1;
+  }
+  record.setBuses([...feed.buses.values()]);
+  // Replay the last window's pings over the next poll, in the order they happened.
+  const now = performance.now();
+  const span = Math.max(1, windowEnd - windowStart);
+  const spread = Math.min(POLL_MS, span * 1000);
+  for (const b of pings) queue.push({ atPerf: now + 400 + ((b.ts - windowStart) / span) * spread, bus: b });
+  queue.sort((p, q) => p.atPerf - q.atPerf);
+  if (queue.length > 6000) queue.splice(0, queue.length - 6000);
+  updateTraffic();
   lastUi = 0;
 }
 
-function updateSpeedButtons() {
-  for (const b of $('speed').querySelectorAll('button')) b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === clock.speed));
-}
-
-function applyRaga() {
-  const hour = new Date(simAt(performance.now())).getUTCHours();
-  music.setRaga(ragaChoice === 'auto' ? autoRaga(hour) : ragaChoice);
-}
-
-// ------------------------------------------------------------ arrivals -> notes
-// Runs ten times a second (it keeps going in a background tab, unlike drawing).
-// While sound is on it looks a little ahead so notes can be scheduled precisely.
-function tick() {
-  const now = performance.now();
-  const ahead = music.playing ? (document.hidden ? 1700 : 300) : 0;
-  const horizon = simAt(now + ahead);
-  if (scheduledUpTo === null || horizon <= scheduledUpTo || horizon - scheduledUpTo > 10 * 60 * 1000) {
-    scheduledUpTo = horizon;
-    return;
+function updateTraffic() {
+  if (!feed || !area) return;
+  const speeds = [];
+  let count = 0;
+  for (const b of feed.buses.values()) {
+    if (b.area !== area.index || feed.feedTime - b.ts > FRESH_FIX_S) continue;
+    count++;
+    if (b.speed != null) speeds.push(b.speed);
   }
-  applyRaga();
-  const from = serviceMoment(scheduledUpTo);
-  const to = serviceMoment(horizon);
-  scheduledUpTo = horizon;
-  if (from.dateKey === to.dateKey) {
-    tt.day(to).eachEvent(from.secs, to.secs, (t, trip, stopIdx) => arrival(to.dayStartMs + t * 1000, trip, stopIdx));
-  }
-  music.tick();
+  speeds.sort((p, q) => p - q);
+  traffic = { speed: speeds.length >= 3 ? speeds[speeds.length >> 1] : null, samples: speeds.length, buses: count };
+  music.setTempo(tempoForSpeed(feed.state === 'live' ? traffic.speed : null));
 }
 
-function arrival(simMs, trip, stopIdx) {
+function playBus(item) {
+  const b = item.bus;
+  const [x0, y0, x1, y1] = area.box;
+  const north = 1 - (b.y - y0) / (y1 - y0 || 1);
+  const degree = Math.max(0, Math.min(BUS_DEGREES - 1, Math.round(north * (BUS_DEGREES - 1))));
+  const pan = ((b.x - x0) / (x1 - x0 || 1)) * 1.6 - 0.8;
+  const moving = !BusFeed.isStanding(b);
+  const note = music.playBus({ moving, degree, eventPerf: item.atPerf, pan });
+  const label = note ? note.label : moving ? music.busLabel(degree) : 'Tham';
+  const stop = nearestStop(b.x, b.y);
+  const who = b.route ? `Route ${b.route}` : 'A bus';
+  visuals.push({
+    atPerf: note ? note.atPerf : item.atPerf,
+    at: [b.x, b.y],
+    colour: moving ? 'var(--ink)' : 'var(--sindoor)',
+    label: `${stop} · ${label}`,
+    row: { time: TIME(b.ts), who: b.route || 'BUS', where: stop, note: label, kind: moving ? 'bus' : 'stand' },
+    title: moving ? `${who} near ${stop}` : `${who} standing near ${stop}`,
+    sub: moving
+      ? `Santoor · ${label}${b.speed != null ? ` · ${Math.round(b.speed)} km/h` : ''}`
+      : `Mridangam · ${label} · ${b.speed != null && b.speed > 0.5 ? `crawling at ${Math.round(b.speed)} km/h` : 'not moving'}`,
+  });
+}
+
+// ------------------------------------------------------------ metro
+
+function metroArrival(simMs, trip, stopIdx) {
   const p = trip.p;
   const local = p.stops[stopIdx];
   const si = tt.lines[p.line].stations[local];
-  const eventPerf = perfAt(simMs);
+  if (!area.stationSet.has(si)) return;
+  const station = tt.stations[si];
+  const at = toKm(station.lat, station.lon);
+  const [x0, , x1] = area.box;
+  const eventPerf = performance.now() + (simMs - istNow());
   const note = music.playStation({
     line: p.line,
     local,
     eventPerf,
-    pan: map.panOf(si),
-    interchange: tt.stations[si].lines.length > 1,
+    pan: ((at[0] - x0) / (x1 - x0 || 1)) * 1.6 - 0.8,
+    interchange: station.lines.length > 1,
   });
-  pending.push({
+  const label = note ? note.label : music.labelFor(p.line, local);
+  const line = tt.lines[p.line];
+  visuals.push({
     atPerf: note ? note.atPerf : eventPerf,
-    simMs,
-    line: p.line,
-    si,
-    towards: p.towards,
-    label: note ? note.label : music.labelFor(p.line, local),
+    at,
+    colour: `var(--line-${line.id.toLowerCase()})`,
+    label: `${station.short} metro · ${label}`,
+    row: { time: formatClock(simMs, false), who: line.id, where: `${station.short} metro`, note: label, kind: line.id.toLowerCase() },
+    title: `${line.name} train at ${station.short}`,
+    sub: `${LINE_VOICES[line.id].instrument} · ${label} · to ${tt.stations[p.towards].short}`,
   });
 }
 
-function fire(ev, now) {
-  map.pulse(ev.si, ev.line, ev.label, now);
-  lastStation[ev.line] = ev;
-  log.unshift(ev);
-  if (log.length > LOG_LENGTH) log.pop();
-  logDirty = true;
+// ------------------------------------------------------------ the clock
+
+// Ten times a second: hand arrivals to the music a moment ahead, so timing stays tight
+// even when the tab is in the background.
+function tick() {
+  if (!area) return;
+  const ahead = music.playing ? (document.hidden ? 1700 : 300) : 0;
+  const horizon = istNow() + ahead;
+  if (metroUpTo === null || horizon <= metroUpTo || horizon - metroUpTo > 10 * 60 * 1000) {
+    metroUpTo = horizon;
+  } else {
+    const from = serviceMoment(metroUpTo);
+    const to = serviceMoment(horizon);
+    if (from.dateKey === to.dateKey) tt.day(to).eachEvent(from.secs, to.secs, (t, trip, i) => metroArrival(to.dayStartMs + t * 1000, trip, i));
+    metroUpTo = horizon;
+  }
+  const until = performance.now() + ahead;
+  while (queue.length && queue[0].atPerf <= until) {
+    const item = queue.shift();
+    if (item.bus.area === area.index) playBus(item);
+  }
+  music.tick();
 }
 
-// ------------------------------------------------------------ drawing
 function frame() {
   const now = performance.now();
-  const sim = simAt(now);
-  const m = serviceMoment(sim);
-  const day = tt.day(m);
-  const trains = day.trainsAt(m.secs);
+  const ist = istNow();
+  const m = serviceMoment(ist);
+  const trains = tt.day(m).trainsAt(m.secs);
 
-  for (let i = 0; i < pending.length; ) {
-    const ev = pending[i];
-    if (ev.atPerf <= now) {
-      pending.splice(i, 1);
-      if (now - ev.atPerf < 2500) fire(ev, now); // skip a backlog from a hidden tab
-    } else i++;
+  for (let i = 0; i < visuals.length; ) {
+    const v = visuals[i];
+    if (v.atPerf > now) {
+      i++;
+      continue;
+    }
+    visuals.splice(i, 1);
+    if (now - v.atPerf > 2500) continue; // skip a backlog from a hidden tab
+    record.pulse(v.at, resolveColour(v.colour), v.label, now);
+    board.unshift(v.row);
+    if (board.length > BOARD_ROWS) board.pop();
+    boardDirty = true;
+    setNowPlaying(v.title, v.sub);
   }
 
-  map.draw(trains, now, music.muted);
+  record.draw(trains, now);
   if (now - lastUi > 250) {
     lastUi = now;
-    updateUi(sim, m, day, trains);
+    updateUi(ist, trains, now);
   }
   requestAnimationFrame(frame);
 }
 
-function updateUi(sim, m, day, trains) {
-  const d = new Date(sim);
-  $('clock').textContent = formatClock(sim);
-  $('clock').dateTime = d.toISOString().slice(0, 19).replace('T', ' ');
-  $('clock-day').textContent = `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} · IST`;
-
-  const live = isLive();
-  const pill = $('mode-pill');
-  pill.dataset.mode = live ? 'live' : 'travel';
-  $('mode-text').textContent = live ? 'Live' : clock.speed > 1 ? `${clock.speed}× speed` : 'Time travel';
-
-  const counts = tt.lines.map(() => 0);
-  for (const t of trains) counts[t.line]++;
-  counts.forEach((n, li) => {
-    $(`count-${li}`).textContent = `${n} train${n === 1 ? '' : 's'}`;
-    const last = lastStation[li];
-    $(`last-${li}`).textContent = last ? `${stationName(last.si)} · ${last.label}` : 'Waiting';
-  });
-
-  const n = trains.length;
-  $('status').textContent = n ? `${n} trains running${music.playing ? '' : ' · sound off'}` : 'No trains running';
-  $('raga-now').textContent = `Raga ${music.raga.name} · ${ragaScale(music.raga)}${ragaChoice === 'auto' ? ' · auto' : ''}`;
-
-  const resting = $('resting');
-  resting.hidden = n > 0;
-  if (!n) {
-    const before = day.firstStart !== null && m.secs < day.firstStart;
-    $('resting-text').textContent = before
-      ? `First trains on this timetable leave at ${formatServiceSecs(day.firstStart)}. The tanpura keeps playing until then.`
-      : 'The last trains of the day have finished. Service starts again in the morning.';
-  }
-
-  if (logDirty) renderLog();
+const colourCache = new Map();
+function resolveColour(c) {
+  if (!c.startsWith('var(')) return c;
+  if (!colourCache.has(c)) colourCache.set(c, getComputedStyle(document.documentElement).getPropertyValue(c.slice(4, -1)).trim());
+  return colourCache.get(c);
 }
 
-function renderLog() {
-  logDirty = false;
-  const ol = $('log');
-  if (!log.length) {
-    ol.innerHTML = '<li class="empty">Notes appear here as trains reach stations.</li>';
+function dayOf(sec) {
+  const d = new Date(sec * 1000 + IST_OFFSET_MS);
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+function setNowPlaying(title, sub) {
+  $('np-title').textContent = title;
+  $('np-sub').textContent = sub;
+}
+
+function updateUi(ist, trains, now) {
+  $('clock').textContent = formatClock(ist);
+  $('m-trains').textContent = trains.length;
+  $('m-buses').textContent = feed.buses.size ? feed.buses.size.toLocaleString('en-IN') : '–';
+
+  const state = feed.state;
+  const sticker = $('sticker');
+  sticker.dataset.state = state;
+  const since = feed.feedTime ? TIME(feed.feedTime) : '';
+  const [main, sub, note] = {
+    loading: ['…', 'Buses', 'Finding live buses…'],
+    live: ['LIVE', 'BMTC GPS', 'Live bus positions, about a minute behind'],
+    paused: ['PAUSED', `since ${since}`, `The live bus feed has paused since ${since} IST. The metro plays on.`],
+    sample: ['SAMPLE', since, `Live buses aren't reachable here, so these are buses from ${since} IST on ${dayOf(feed.feedTime)}.`],
+    error: ['OFFLINE', 'Metro only', 'Bus positions could not be loaded. The metro plays on.'],
+  }[state];
+  $('sticker-main').textContent = main;
+  $('sticker-sub').textContent = sub;
+  $('feed-note').textContent = note;
+
+  $('f-buses').textContent = feed.buses.size ? traffic.buses : '–';
+  $('f-traffic').textContent = state === 'live' && traffic.speed != null ? `${Math.round(traffic.speed)}` : '–';
+  $('f-pulse').textContent = music.tempo;
+
+  if (state === 'live' && Number.isFinite(feed.nextPollAt)) {
+    const left = Math.max(0, feed.nextPollAt - now);
+    $('np-progress').style.width = `${Math.min(100, (1 - left / POLL_MS) * 100)}%`;
+    $('np-left').textContent = formatClock(feed.feedTime * 1000 + IST_OFFSET_MS);
+    $('np-right').textContent = `next in ${Math.ceil(left / 1000)} s`;
+  } else {
+    $('np-progress').style.width = '100%';
+    $('np-left').textContent = since || '--:--';
+    $('np-right').textContent = state === 'loading' ? 'loading' : state;
+  }
+
+  if (boardDirty) renderBoard();
+}
+
+function renderBoard() {
+  boardDirty = false;
+  const ol = $('board-rows');
+  if (!board.length) {
+    ol.innerHTML = '<li class="empty">Waiting for the next bus or train…</li>';
     return;
   }
   ol.replaceChildren(
-    ...log.map((ev) => {
+    ...board.map((r) => {
       const li = document.createElement('li');
-      const time = document.createElement('time');
-      time.textContent = formatClock(ev.simMs, false);
-      const dot = document.createElement('span');
-      dot.className = 'dot';
-      dot.style.setProperty('--c', lineColorVar(ev.line));
-      const where = document.createElement('span');
-      where.className = 'where';
-      const to = document.createElement('small');
-      to.textContent = ev.si === ev.towards ? ' · end of the line' : ` to ${stationName(ev.towards)}`;
-      where.append(stationName(ev.si), to);
-      const sw = document.createElement('span');
-      sw.className = 'sw';
-      sw.textContent = ev.label;
-      li.append(time, dot, where, sw);
+      li.className = r.kind;
+      for (const [cls, text] of [['t', r.time], ['w', r.who], ['p', r.where.toUpperCase()], ['n', r.note]]) {
+        const s = document.createElement('span');
+        s.className = cls;
+        s.textContent = text;
+        li.append(s);
+      }
       return li;
     }),
   );
-}
-
-function showTip(e) {
-  const tip = $('tooltip');
-  const r = $('map').getBoundingClientRect();
-  const x = e.clientX - r.left;
-  const y = e.clientY - r.top;
-  const si = map.stationAt(x, y);
-  if (si < 0) {
-    tip.hidden = true;
-    return;
-  }
-  const s = tt.stations[si];
-  const title = document.createElement('strong');
-  title.textContent = s.name;
-  const kn = document.createElement('span');
-  kn.className = 'kn';
-  kn.lang = 'kn';
-  kn.textContent = s.kn;
-  const rows = s.lines.map((li) => {
-    const row = document.createElement('div');
-    row.className = 'tip-row';
-    const dot = document.createElement('span');
-    dot.className = 'dot';
-    dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${lineColorVar(li)}`;
-    const note = document.createElement('b');
-    note.textContent = music.labelFor(li, tt.lines[li].stations.indexOf(si));
-    row.append(dot, `${LINE_VOICES[tt.lines[li].id].instrument}`, note);
-    return row;
-  });
-  tip.replaceChildren(title, kn, ...rows);
-  tip.hidden = false;
-  const w = tip.offsetWidth;
-  const h = tip.offsetHeight;
-  tip.style.left = `${Math.min(Math.max(8, x + 14), r.width - w - 8)}px`;
-  tip.style.top = `${y + 14 + h > r.height - 8 ? y - h - 12 : y + 14}px`;
 }
 
 init();

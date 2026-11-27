@@ -3,155 +3,130 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Metro Raga</title>
+<title>Ooru Raga</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Listen to Bengaluru's Namma Metro. Every train that reaches a station plays a note, following today's real timetable.">
-<meta name="theme-color" content="#0d1120">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1120'/%3E%3Cpath d='M14 22h36' stroke='%23c65cb3' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M14 32h28' stroke='%2334c27a' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M14 42h20' stroke='%23f2d23c' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Kannada:wdth,wght@75..125,400..700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<meta name="description" content="Bengaluru, played live. Pick an area and hear its BMTC buses and metro trains as Carnatic music, as they move.">
+<meta name="theme-color" content="#f2e6cf">
+<meta property="og:title" content="Ooru Raga · ಊರು ರಾಗ">
+<meta property="og:description" content="Bengaluru, played live. Pick an area and hear its buses and metro trains as music.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233456a6'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23f5b301'/%3E%3Ccircle cx='32' cy='32' r='20' fill='%23141114'/%3E%3Ccircle cx='32' cy='32' r='5' fill='%23e0301e'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/anton-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="masthead">
-  <div class="wrap masthead-inner">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <div>
-        <h1>Metro Raga <span lang="kn">ಮೆಟ್ರೋ ರಾಗ</span></h1>
-        <p class="tagline">Bengaluru's metro timetable, played as music</p>
-      </div>
+<header class="wrap mast">
+  <div class="mast-title">
+    <h1 class="mega">Ooru Raga</h1>
+    <p class="sub"><span class="thin">Bengaluru, played live</span><span class="kn" lang="kn">ಊರು ರಾಗ</span></p>
+  </div>
+  <div class="meta">
+    <div class="meta-row">
+      <p class="caps"><b id="m-buses">–</b>BMTC buses</p>
+      <p class="caps"><b id="m-trains">–</b>Metro trains</p>
+      <p class="caps"><b id="m-areas">–</b>Areas</p>
     </div>
-    <div class="clock">
-      <span id="mode-pill" class="pill" data-mode="live"><i aria-hidden="true"></i><span id="mode-text">Live</span></span>
-      <time id="clock" class="clock-time">--:--:--</time>
-      <span id="clock-day" class="clock-day">IST</span>
-    </div>
+    <p class="led-clock"><time id="clock">--:--:--</time><small>IST</small></p>
   </div>
 </header>
 
-<main class="wrap app">
-  <section class="stage" aria-label="Map of Namma Metro with trains moving to the timetable">
-    <canvas id="map" role="img" aria-label="Purple, Green and Yellow lines of Namma Metro, with trains shown as moving dots"></canvas>
-    <div id="tooltip" class="tooltip" role="status" hidden></div>
-
-    <div id="start-overlay" class="start-overlay">
-      <button id="start" class="btn-primary btn-big" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
-        Start listening
-      </button>
-      <p>Headphones help. Trains to the west play on the left, east on the right.</p>
+<main class="wrap main">
+  <section class="stage" aria-label="Bengaluru drawn as a record. Tap an area to listen to it.">
+    <canvas id="record" role="img" aria-label="Map of Bengaluru as a record, divided into areas, with live buses as dots and the metro lines"></canvas>
+    <div id="sticker" class="sticker" data-state="loading"><div><span id="sticker-main">…</span><small id="sticker-sub">Buses</small></div></div>
+    <div class="stage-cap">
+      <p>Drop the needle on any area to hear it.</p>
+      <p id="feed-note" class="caps">Finding live buses…</p>
     </div>
-
-    <div id="resting" class="resting" hidden>
-      <p class="resting-title">The metro is resting</p>
-      <p id="resting-text" class="resting-text">No trains are running right now.</p>
-      <button id="resting-jump" class="btn-quiet" type="button">Hear the 9:00 rush</button>
+    <div class="legend" aria-hidden="true">
+      <span><i class="dot"></i>Bus, live GPS</span>
+      <span><i class="ln"></i>Metro, timetable</span>
     </div>
-
-    <p class="stage-note"><span class="ring-key" aria-hidden="true"></span>Rings are 5 km from Majestic. Further out, higher note.</p>
+    <div id="tooltip" class="tooltip" hidden></div>
+    <button id="start" class="start" type="button">
+      <span class="start-kn" lang="kn">ಕೇಳಿ</span>
+      <span class="start-en">Start listening</span>
+    </button>
   </section>
 
-  <aside class="panel" aria-label="Listening controls">
-    <div class="player">
-      <button id="play" class="play" type="button" aria-pressed="false" aria-label="Play">
-        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
-        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
-      </button>
-      <div class="player-text">
-        <p id="status" class="status">Loading the timetable…</p>
-        <p id="raga-now" class="raga-now">Raga Mohanam · S R₂ G₃ P D₂</p>
+  <aside class="sleeve" aria-label="The area you are listening to">
+    <article id="poster" class="poster">
+      <span class="blk b1"></span><span class="blk b2"></span><span class="blk b3"></span>
+      <div class="poster-top">
+        <span class="arrow" aria-hidden="true">➜</span>
+        <p class="caps"><span id="area-index">Area</span><b id="area-raga">Raga</b><span id="area-scale" class="scale"></span></p>
       </div>
+      <p id="area-akshara" class="akshara" lang="kn" aria-hidden="true"></p>
+      <div class="poster-name"><h2 id="area-name">&nbsp;</h2><span id="area-kn" class="kn" lang="kn"></span></div>
+      <dl class="facts">
+        <div><dt>Buses now</dt><dd id="f-buses">–</dd></div>
+        <div><dt>Traffic km/h</dt><dd id="f-traffic">–</dd></div>
+        <div><dt>Pulse bpm</dt><dd id="f-pulse">–</dd></div>
+        <div><dt>Metro stops</dt><dd id="f-metro">–</dd></div>
+      </dl>
+    </article>
+
+    <section class="np" aria-label="Now playing">
+      <div class="np-head caps"><span>Now playing</span><span id="np-area"></span></div>
+      <h3 id="np-title">Press play to start</h3>
+      <p id="np-sub" class="np-sub">&nbsp;</p>
+      <div class="np-bar"><span id="np-left">--:--</span><span class="track"><i id="np-progress"></i></span><span id="np-right">&nbsp;</span></div>
+      <div class="np-ctrl">
+        <button id="prev" type="button" aria-label="Previous area"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+        <button id="play" class="pp" type="button" aria-pressed="false" aria-label="Play">
+          <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+          <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+        </button>
+        <button id="next" type="button" aria-label="Next area"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      </div>
+      <label class="vol" for="volume"><span class="caps">Volume</span><input id="volume" type="range" min="0" max="100" value="80"></label>
+    </section>
+
+    <div class="tokens" role="group" aria-label="Instruments. Tap one to mute it.">
+      <button class="token" type="button" data-layer="buses" aria-pressed="true"><span class="disc d-bus" lang="kn">ಬ</span><span><b>Buses</b><small>Santoor, mridangam</small></span></button>
+      <button class="token" type="button" data-layer="metro" aria-pressed="true"><span class="disc d-metro" lang="kn">ಮೆ</span><span><b>Metro</b><small>Veena, flute, bells</small></span></button>
+      <button class="token" type="button" data-layer="tanpura" aria-pressed="true"><span class="disc d-drone" lang="kn">ಸ</span><span><b>Tanpura</b><small>Drone</small></span></button>
     </div>
 
-    <div class="group">
-      <h2 class="label">The orchestra <span class="label-hint">tap a line to mute it</span></h2>
-      <div id="lines" class="lines"></div>
-    </div>
-
-    <div class="group">
-      <h2 class="label" id="speed-label">Speed</h2>
-      <div id="speed" class="seg" role="group" aria-labelledby="speed-label">
-        <button type="button" data-speed="1" aria-pressed="true">Real time</button>
-        <button type="button" data-speed="5" aria-pressed="false">5×</button>
-        <button type="button" data-speed="20" aria-pressed="false">20×</button>
-      </div>
-    </div>
-
-    <div class="group">
-      <h2 class="label" id="jump-label">Jump to</h2>
-      <div id="jump" class="seg seg-grid" role="group" aria-labelledby="jump-label">
-        <button type="button" data-time="now">Now</button>
-        <button type="button" data-time="08:45">Morning rush · 8:45</button>
-        <button type="button" data-time="18:30">Evening rush · 18:30</button>
-        <button type="button" data-time="23:20">Last trains · 23:20</button>
-      </div>
-    </div>
-
-    <div class="group settings">
-      <div class="field">
-        <label class="label" for="raga">Raga</label>
-        <select id="raga"></select>
-      </div>
-      <div class="field">
-        <label class="label" for="volume">Volume</label>
-        <input id="volume" type="range" min="0" max="100" value="80">
-      </div>
-      <label class="check" for="drone"><input id="drone" type="checkbox" checked> Tanpura drone</label>
-    </div>
-
-    <div class="group">
-      <h2 class="label">Just played</h2>
-      <ol id="log" class="log" aria-label="Most recent station notes"></ol>
-    </div>
+    <section class="board" aria-label="Just played">
+      <div class="board-head"><span id="board-title">JUST PLAYED</span><span>NOTE</span></div>
+      <ol id="board-rows" class="board-rows"><li class="empty">Waiting for the next bus or train…</li></ol>
+    </section>
   </aside>
 </main>
 
-<section class="wrap about" aria-labelledby="about-title">
-  <h2 id="about-title" class="about-title">How the metro makes music</h2>
-  <ol class="steps">
-    <li>
-      <h3>The timetable</h3>
-      <p>BMRCL publishes a timetable for each line. A community dataset turns those into a standard format listing every trip of the day, about 900 on a weekday.</p>
-    </li>
-    <li>
-      <h3>The trains</h3>
-      <p>Your browser works out where each of today's trains should be at this moment in Bengaluru, and moves it along the real track. It follows the timetable, not live GPS, so real trains can be a few minutes off.</p>
-    </li>
-    <li>
-      <h3>The notes</h3>
-      <p>When a train reaches a station, that station's note plays on its line's instrument. Notes rise the further a station is from Majestic (RV Road on the Yellow Line), so trains heading into the city fall towards Sa, the home note.</p>
-    </li>
-  </ol>
+<section class="wrap picker" aria-labelledby="picker-title">
+  <div class="picker-head">
+    <h2 id="picker-title">Pick an <em>ooru</em></h2>
+    <p class="caps"><span id="picker-count">–</span> areas · each with its own raga and pulse</p>
+  </div>
+  <div id="featured" class="cards"></div>
+  <div id="regions" class="regions"></div>
+</section>
 
-  <div class="about-grid">
-    <div class="about-block">
-      <h3>The orchestra</h3>
-      <div class="table-wrap">
-        <table class="orchestra">
-          <thead><tr><th scope="col">Line</th><th scope="col">Instrument</th><th scope="col">Home note at</th><th scope="col">Stations</th></tr></thead>
-          <tbody id="orchestra-rows"></tbody>
-        </table>
-      </div>
-      <p>Underneath, a tanpura holds Sa and Pa (or Ma, for ragas without Pa). Majestic and RV Road, where lines meet, add a soft gong.</p>
-    </div>
-    <div class="about-block">
-      <h3>The ragas</h3>
-      <p>All three lines play in the same raga, so their notes always fit together. Each one uses five notes, which keeps chance meetings between trains consonant. <strong>Auto</strong> moves through Mohanam in the morning, Madhyamavati at midday, Hamsadhwani for the evening rush and Shivaranjani at night.</p>
-      <p>Notes snap to a gentle 80 bpm pulse. At 20× speed some arrivals share a beat or wait for the next one.</p>
-    </div>
-    <div class="about-block">
-      <h3>Data and credits</h3>
-      <p>Timetable and stations: <a href="https://github.com/Vonter/bmrcl-gtfs" target="_blank" rel="noopener">bmrcl-gtfs</a> by Vonter, under the <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">ODbL</a>. It is built from timetables on the <a href="https://www.bmrc.co.in/metro-timings/" target="_blank" rel="noopener">BMRCL website</a> and track shapes from © OpenStreetMap contributors.</p>
-      <p id="data-version">Timetable data version: loading.</p>
-      <p>Inspired by <a href="https://www.delhimetrojazz.com/" target="_blank" rel="noopener">Delhi Metro Jazz</a>.</p>
-    </div>
+<section class="wrap notes" aria-labelledby="notes-title">
+  <h2 id="notes-title">Liner notes <em>for the city</em></h2>
+  <div>
+    <h3>Buses are the rhythm</h3>
+    <p>About 4,000 BMTC buses report where they are every few minutes. When one in your area reports, it plays: the santoor if it's moving, the mridangam if it's standing still. You hear them about a minute after they happen, in the order they happened.</p>
+  </div>
+  <div>
+    <h3>Traffic sets the pulse</h3>
+    <p>A kanjira keeps Adi tala underneath. Its tempo follows how fast the buses in your area are moving, so a jam at Silk Board slows the whole song down.</p>
+  </div>
+  <div>
+    <h3>The metro is the melody</h3>
+    <p>Trains follow the BMRCL timetable, not live GPS. When one reaches a station in your area, the Purple Line plays veena, Green plays bansuri and Yellow plays temple bells.</p>
+  </div>
+  <div>
+    <h3>Every area has a raga</h3>
+    <p>Each area has its own five-note raga, from Hindolam in Jayanagar to Mohanam in HSR Layout, with a tanpura tuned to match. Move the needle and the whole ensemble retunes.</p>
   </div>
 </section>
 
-<footer class="wrap foot">
-  <p>An unofficial art project. Not affiliated with BMRCL. Not a journey planner: for real train times, check BMRCL.</p>
+<footer class="wrap credits">
+  <p>Live bus positions from BMTC, via <a href="https://maps.reclaim.city/bmtc/" target="_blank" rel="noopener">reclaim.city</a>. Bus routes and stops from <a href="https://github.com/Vonter/bmtc-gtfs" target="_blank" rel="noopener">bmtc-gtfs</a> and the metro timetable from <a href="https://github.com/Vonter/bmrcl-gtfs" target="_blank" rel="noopener">bmrcl-gtfs</a>, both by Vonter under the <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">ODbL</a>, with track shapes © OpenStreetMap contributors. Inspired by <a href="https://www.delhimetrojazz.com/" target="_blank" rel="noopener">Delhi Metro Jazz</a>.</p>
+  <p>An unofficial art project, not affiliated with BMTC or BMRCL, and not a journey planner. All sound is made in your browser.</p>
 </footer>
 
 <script type="module" src="js/main.js"></script>

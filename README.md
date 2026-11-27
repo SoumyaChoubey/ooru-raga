@@ -1,111 +1,140 @@
-# Metro Raga · ಮೆಟ್ರೋ ರಾಗ
+# Ooru Raga · ಊರು ರಾಗ
 
-Bengaluru's Namma Metro, played as music. Every time a train reaches a station, that
-station plays a note. Each line is its own instrument, and the trains follow the real
-published timetable in Bengaluru time, so what you hear is what the metro is doing now.
+Bengaluru, played live. Pick an area of the city (Jayanagar, HSR Layout, Bellandur and 63 more) and
+hear its BMTC buses and Namma Metro trains turned into Carnatic music as they move.
 
-| Line | Instrument | Home note (Sa) at |
-| --- | --- | --- |
-| Purple | Veena | Majestic |
-| Green | Bansuri flute | Majestic |
-| Yellow | Temple bells | RV Road |
+- **Buses are the rhythm.** About 4,000 buses report their GPS position every few minutes. When one in
+  your area reports, it plays the santoor if it's moving and the mridangam if it's standing still.
+- **Traffic sets the pulse.** A kanjira keeps Adi tala. Its tempo follows how fast your area's buses
+  are moving, so a jam slows the song down.
+- **The metro is the melody.** Trains follow the BMRCL timetable. When one reaches a station in your
+  area, the Purple Line plays veena, Green plays bansuri and Yellow plays temple bells.
+- **Every area has a raga**, with a tanpura tuned to match. Links like `/#hsr-layout` open an area
+  directly, so people can share their own neighbourhood.
 
-A tanpura drone plays underneath, and the two interchange stations (Majestic and
-RV Road) add a soft gong.
+All sound is synthesised in the listener's browser. There are no audio files and no audio server.
 
-## How it works
+## How it's built for lots of listeners
 
-1. **The timetable.** BMRCL publishes timetables for each line. The community project
-   [bmrcl-gtfs](https://github.com/Vonter/bmrcl-gtfs) turns them into GTFS, the
-   standard timetable format, with every trip of every day.
-2. **The trains.** The browser works out where each train should be at the current
-   moment in IST and moves it along the real track shape. This follows the timetable,
-   not live GPS. BMRCL does not publish live train positions, so the real trains can
-   be a couple of minutes off.
-3. **The notes.** Each station gets a note from a five-note Carnatic raga. The further
-   a station is from Majestic (RV Road on the Yellow Line), the higher its note. A
-   train heading out of the city climbs, and a train heading in falls back towards Sa.
-   Stations to the west sound in your left ear and stations to the east in your right.
+```
+ BMTC buses ──> reclaim.city feed (500 KB, every ~15 s)
+                        │  fetched at most once every 20 s per Cloudflare server
+                        ▼
+              /api/buses relay (functions/api/buses.js, on Cloudflare)
+                        │  shrunk to ~45 KB, one copy shared by everyone
+                        ▼
+      every listener's browser: polls every 30 s, draws the record, makes the music
+```
 
-All the sound is synthesised in the browser with the Web Audio API. There are no audio
-files.
+- **The website is static files** on Cloudflare Pages: served from Cloudflare's servers worldwide, with
+  no limit on visitors or bandwidth on the free plan.
+- **The relay protects the bus feed.** However many people are listening, reclaim.city sees about three
+  requests a minute from each Cloudflare location. Tested locally: 300 requests, 30 at a time, caused
+  one fetch of the bus feed.
+- **Nothing breaks if the bus feed stops.** The relay keeps serving the last good copy, the page marks
+  it "PAUSED since 17:31", and the metro and tanpura play on. If the relay can't be reached at all, the
+  page shows a saved snapshot of buses, clearly labelled "SAMPLE".
+- **Listeners use little data:** about 45 KB every 30 seconds while the tab is open or playing, and
+  nothing while a silent tab sits in the background.
+
+### Free plan limits, and when to pay $5
+
+Static pages on Cloudflare Pages are unlimited. The relay is a Cloudflare "Function", and the free plan
+allows **100,000 relay requests a day**. Each listener makes about 120 an hour, so that's roughly
+**800 listener-hours a day** (for example, 1,600 people listening for half an hour each).
+
+If a launch goes bigger than that, the site still loads and plays the metro, but buses show as paused
+until the next day. To remove that limit, turn on **Workers Paid** in the Cloudflare dashboard
+($5 a month, 10 million requests a month included, about 80,000 listener-hours). It also lifts the
+per-request processing limit, which the relay comes close to on the free plan.
+
+## Put it online (Cloudflare Pages, free)
+
+You need a free GitHub account with this project pushed to it, and a free Cloudflare account.
+
+1. Go to <https://dash.cloudflare.com>, sign up or log in.
+2. In the sidebar choose **Workers & Pages**, then **Create**. Pick **Pages**, then the option to
+   connect or import a Git repository. (Cloudflare renames these buttons now and then.)
+3. Choose your GitHub account and this repository, then continue to the setup page.
+4. Leave **Framework preset** as *None*, leave **Build command** empty, and set
+   **Build output directory** to `/`. Choose **Save and Deploy**.
+5. After about a minute you get an address like `https://ooru-raga.pages.dev`. Open it and press
+   **Start listening**. The sticker on the record should say **LIVE** (or **PAUSED** if the bus feed
+   itself is down at that moment).
+
+Every time you push a change to GitHub, Cloudflare redeploys automatically. You can add your own
+domain later under the project's **Custom domains** tab.
+
+GitHub Pages also works for the page itself, but it can't run the relay, so buses will show the saved
+sample instead of live positions.
 
 ## Run it on your computer
 
-The site is plain HTML, CSS and JavaScript. There is no build step and nothing to install.
-Browsers will not load the timetable file from a page opened by double-clicking, so run a
-tiny local web server. Python is already on most Macs and Linux machines:
+To see everything including live buses, use Cloudflare's own tool (needs [Node.js](https://nodejs.org)):
 
 ```bash
-cd metro-raga
+npx wrangler pages dev .
 ```
+
+Then open <http://localhost:8788>. For the page alone, with sample buses, any static server works:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000> and press **Start listening**.
-
-## Put it online for free (GitHub Pages)
-
-1. Push this folder to a GitHub repository.
-2. On GitHub, open the repository's **Settings → Pages**.
-3. Under **Build and deployment**, set **Source** to *Deploy from a branch*, choose
-   `main` and `/ (root)`, and save.
-4. After a minute the site is live at `https://<your-username>.github.io/metro-raga/`.
-
-Free GitHub accounts need the repository to be public for Pages.
-
 ## Change how it sounds
 
-Everything musical is in [`js/music.js`](js/music.js), near the top:
+- [`js/music.js`](js/music.js): the instruments, the ragas (`RAGAS`), which line plays what
+  (`LINE_VOICES`), how traffic sets the tempo (`tempoForSpeed`), and the home pitch (`SA_MIDI`).
+- [`scripts/build_areas.py`](scripts/build_areas.py): the list of areas, their Kannada names, and
+  which raga each area gets. Rebuild with the command in the next section.
+- [`style.css`](style.css): the colours and fonts, as variables at the top.
 
-- `LINE_VOICES` sets which instrument each line plays, how high it sits, and how loud it is.
-- `RAGAS` lists the ragas. Add one by giving its swaras and the semitones above Sa.
-- `autoRaga()` decides which raga plays at which hour when the picker is on Auto.
-- `SA_MIDI` sets the home pitch for everything (50 is D3). `TEMPO` sets the pulse.
+## Update the data
 
-The map's colours and fonts are CSS variables at the top of [`style.css`](style.css).
+```bash
+# Metro timetable, from https://github.com/Vonter/bmrcl-gtfs (gtfs/bmrcl.zip)
+python3 scripts/build_data.py path/to/bmrcl.zip data/metro.json
 
-## Update the timetable
+# Areas, bus stops and route numbers (needs: pip install shapely), from
+# https://github.com/reclaimchennai/India_GTFS (karnataka/bengaluru/bus.zip)
+python3 scripts/build_areas.py path/to/bus.zip data/metro.json data
 
-When BMRCL changes its timetable or a new line opens, bmrcl-gtfs is usually updated.
-To pull the new data in:
-
-1. Download `bmrcl.zip` from <https://github.com/Vonter/bmrcl-gtfs/tree/main/gtfs>.
-2. Run the converter, which uses only the Python standard library:
-
-   ```bash
-   python3 scripts/build_data.py path/to/bmrcl.zip data/metro.json
-   ```
-
-A new line will also need an entry in `ANCHORS` and `LINE_ORDER` in
-[`scripts/build_data.py`](scripts/build_data.py), an instrument in `LINE_VOICES`, and a
-colour variable (`--line-pink`, for example) in `style.css`.
+# A fresh saved snapshot of buses for the "SAMPLE" fallback
+node scripts/make_sample.mjs
+```
 
 ## Files
 
 ```
-index.html            the page
-style.css             colours, fonts, layout
-js/main.js            the clock, controls, and the link between trains and sound
-js/timetable.js       where every train is, and when it reaches each station
-js/music.js           the instruments, ragas and tanpura
-js/map.js             the map, trains and ripples, drawn on a canvas
-data/metro.json       the timetable, made small enough for a browser (about 60 KB)
-scripts/build_data.py turns the GTFS zip into data/metro.json
+index.html               the page
+style.css                colours, fonts and layout
+_headers, wrangler.toml  Cloudflare Pages settings (caching, and where the site lives)
+functions/api/buses.js   the live bus relay that runs on Cloudflare
+lib/bus-feed.js          reads the bus feed and shrinks it (used by the relay and the sample script)
+js/main.js               connects everything: areas, buses, metro, music, the page
+js/buses.js              fetches live buses and turns new GPS reports into notes
+js/timetable.js          where every metro train is, and when it reaches each station
+js/areas.js              the listening areas and which one a point falls in
+js/music.js              every instrument, synthesised in the browser
+js/record.js             draws the city as a record, with buses, trains and the tonearm
+data/                    metro timetable, areas, bus stops per area, route numbers, sample buses
+fonts/                   self-hosted fonts and their licences
+scripts/                 rebuild the data
 ```
 
 ## Credits and licences
 
 - Code: MIT licence (see [`LICENSE`](LICENSE)).
-- Timetable data in `data/metro.json` is derived from
-  [bmrcl-gtfs](https://github.com/Vonter/bmrcl-gtfs) by Vonter and is shared under the
-  [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
-  See [`data/LICENSE.md`](data/LICENSE.md).
-- bmrcl-gtfs is built from timetables published by
-  [BMRCL](https://www.bmrc.co.in/metro-timings/) and track geometry from
-  © OpenStreetMap contributors.
+- Live bus positions: BMTC, republished by [reclaim.city](https://maps.reclaim.city/bmtc/).
+- Bus routes and stops: [bmtc-gtfs](https://github.com/Vonter/bmtc-gtfs) by Vonter, via
+  [reclaimchennai/India_GTFS](https://github.com/reclaimchennai/India_GTFS), ODbL 1.0.
+- Metro timetable: [bmrcl-gtfs](https://github.com/Vonter/bmrcl-gtfs) by Vonter, ODbL 1.0, from
+  [BMRCL's published timetables](https://www.bmrc.co.in/metro-timings/) and © OpenStreetMap
+  contributors. Everything in `data/` derived from these is shared under the same ODbL terms (see
+  [`data/LICENSE.md`](data/LICENSE.md)).
+- Fonts: Anton, Oswald, Doto, Anek Kannada, IBM Plex Sans and DM Serif Display, all under the SIL Open
+  Font License (licences in [`fonts/`](fonts)).
 - Inspired by [Delhi Metro Jazz](https://www.delhimetrojazz.com/).
 
-This is an unofficial art project. It is not affiliated with BMRCL and is not a journey planner.
+An unofficial art project. Not affiliated with BMTC or BMRCL, and not a journey planner.
