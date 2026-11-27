@@ -93,6 +93,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .led-clock { background: var(--record); color: var(--tota); font: 800 30px/1 var(--dots); padding: 10px 14px 8px; border-radius: 6px; letter-spacing: 0.04em; box-shadow: inset 0 0 0 2px #2a2326; font-variant-numeric: tabular-nums; }
 .led-clock small { font: 600 12px var(--dots); color: #8a7f6c; margin-left: 6px; }
 
+/* ---------------------------------------------------------------- notice: why buses aren't live */
+.notice { padding-top: 16px; }
+.notice-inner { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; align-items: start; padding: 12px 16px; background: var(--haldi); border: 2px solid var(--ink); border-radius: 4px; box-shadow: 4px 4px 0 var(--ink); }
+.notice-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--haldi); font: 400 22px/1 var(--display); }
+.notice-body { display: grid; gap: 4px; min-width: 0; }
+.notice-title { font: 400 22px/1.05 var(--display); text-transform: uppercase; letter-spacing: 0.02em; }
+.notice-body p:not(.notice-title):not(.notice-meta) { max-width: 95ch; }
+.notice-meta { color: var(--ink-soft); }
+
 /* ---------------------------------------------------------------- stage: the record */
 .main { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 22px; padding-block: 22px; align-items: start; }
 .stage {
@@ -119,6 +128,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sticker[data-state="paused"], .sticker[data-state="loading"] { background: var(--haldi); font-size: 21px; }
 .sticker[data-state="sample"] { background: var(--gulal); color: var(--cream); font-size: 21px; }
 .sticker[data-state="error"] { background: var(--cream); font-size: 19px; }
+.sticker[data-state="timetable"] { background: var(--cream); font-size: 17px; }
 .sticker[data-state="live"] span { animation: blink 2.4s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0.55; } }
 
@@ -239,6 +249,8 @@ html[data-side="jazz"] .stage { background: repeating-conic-gradient(from 3.75de
 .board-rows li span { overflow: hidden; text-overflow: ellipsis; }
 .board-rows .n { color: var(--tota); text-align: right; }
 .board-rows .stand { color: #ff8a73; }
+.board-rows .tt { color: #e7c77f; }
+.board-rows .stand.tt { color: #f2a08f; }
 .board-rows .purple { color: #f3a6ea; }
 .board-rows .green { color: #7ff0b2; }
 .board-rows .yellow { color: #fff07a; }
@@ -307,6 +319,11 @@ html[data-side="jazz"] .stage { background: repeating-conic-gradient(from 3.75de
   .sticker { width: 76px; height: 76px; font-size: 18px; left: 10px; top: 10px; }
   .sticker[data-state] { font-size: 15px; }
   .sticker[data-state="live"] { font-size: 19px; }
+  .sticker[data-state="timetable"] { font-size: 12.5px; }
+  .notice-inner { grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 10px 12px; }
+  .notice-icon { width: 26px; height: 26px; font-size: 17px; }
+  .notice-title { font-size: 18px; }
+  .notice-body { font-size: 13.5px; }
   .sticker small { font-size: 6.5px; }
   .legend { display: none; }
   .stage-cap { left: 14px; bottom: 10px; max-width: 75%; }

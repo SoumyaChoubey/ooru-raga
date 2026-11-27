@@ -95,6 +95,7 @@ export class BusFeed {
         // the feed can't be reached from here: fall through to paused or sample
       }
     }
+    this.checkedAt = Date.now();
     if (data) {
       this.ingest(data, false);
     } else {

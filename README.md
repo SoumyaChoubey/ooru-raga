@@ -12,6 +12,10 @@ hear its BMTC buses and Namma Metro trains turned into Carnatic music as they mo
     are built only from the raga's notes, with a ride cymbal, and a mridangam phrase every fourth bar.
 - **The metro adds colour.** Trains follow the BMRCL timetable. When one reaches a station in your
   area, the Purple Line plays santoor, Green plays jal tarang and Yellow plays temple bells.
+- **Never silent when the live feed is down.** If BMTC's live feed stops (it happens), buses in
+  your area play from BMTC's published timetable instead. A notice at the top of the page says so,
+  with the time of the last live update and of the last check, and the sticker on the record reads
+  **TIMETABLE**. The page checks every minute and goes back to **LIVE** by itself.
 - **Every area has a raga**, with a tanpura tuned to match. Links like `/#hsr-layout` open an area
   directly, so people can share their own neighbourhood.
 
@@ -139,6 +143,9 @@ python3 scripts/build_data.py path/to/bmrcl.zip data/metro.json
 # https://github.com/reclaimchennai/India_GTFS (karnataka/bengaluru/bus.zip)
 python3 scripts/build_areas.py path/to/bus.zip data/metro.json data
 
+# The bus timetable backup, one file per area (needs shapely too)
+python3 scripts/build_bus_timetable.py path/to/bus.zip data/areas.json data/bus-timetable
+
 # A fresh saved snapshot of buses for the "SAMPLE" fallback
 node scripts/make_sample.mjs
 ```
@@ -155,6 +162,7 @@ functions/api/buses.js   the live bus relay that runs on Cloudflare
 lib/bus-feed.js          reads the bus feed and shrinks it (used by the relay and the sample script)
 js/main.js               connects everything: areas, buses, metro, music, the page
 js/buses.js              fetches live buses and turns new GPS reports into notes
+js/bustimetable.js       the bus timetable backup, used while live buses are unavailable
 js/timetable.js          where every metro train is, and when it reaches each station
 js/areas.js              the listening areas and which one a point falls in
 js/music.js              every instrument, synthesised in the browser

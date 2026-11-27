@@ -3,6 +3,7 @@ import { Timetable, serviceMoment, istNow, formatClock, IST_OFFSET_MS } from './
 import { Music, RAGAS, STYLES, LINE_VOICES, BUS_VOICES, BUS_DEGREES, ragaScale, tempoForSpeed } from './music.js';
 import { Areas, toKm } from './areas.js';
 import { BusFeed } from './buses.js';
+import { loadBusTimetable, tempoForBusesDue } from './bustimetable.js';
 import { Record } from './record.js';
 
 const $ = (id) => document.getElementById(id);
@@ -28,6 +29,8 @@ let boardDirty = true;
 let metroUpTo = null; // IST ms up to which metro arrivals have been handled
 let lastUi = 0;
 let traffic = { speed: null, samples: 0, buses: 0 };
+let busTable = null; // the area's bus timetable, used while live buses are unavailable
+let busTableFor = null;
 
 async function getJson(url) {
   const res = await fetch(url);
@@ -82,11 +85,33 @@ function selectArea(id, { fromUser = false } = {}) {
   visuals.length = 0; // the queue keeps every area's buses, so a new area starts playing straight away
   areaStops = [];
   loadStops(area);
+  busTable = null;
+  busTableFor = null;
+  if (timetableMode()) ensureBusTable();
   updateTraffic();
   renderArea();
   setNowPlaying(`Listening to ${area.name}`, `Raga ${RAGAS[area.raga].name}. Moving buses play veena, waiting buses play flute.`);
   for (const b of document.querySelectorAll('[data-area]')) b.setAttribute('aria-pressed', String(b.dataset.area === area.id));
   if (fromUser && !music.playing) togglePlay();
+}
+
+/** Live buses unavailable (feed paused, unreachable or offline): play the timetable instead. */
+function timetableMode() {
+  return !!feed && feed.state !== 'live' && feed.state !== 'loading';
+}
+
+function ensureBusTable() {
+  if (!area || busTableFor === area.id) return;
+  const id = area.id;
+  busTableFor = id;
+  busTable = null;
+  loadBusTimetable(id)
+    .then((t) => {
+      if (area && area.id === id) busTable = t;
+    })
+    .catch(() => {
+      if (busTableFor === id) busTableFor = null; // try again on the next tick
+    });
 }
 
 async function loadStops(a) {
@@ -343,6 +368,7 @@ function onSnapshot({ pings, windowStart, windowEnd }) {
     b.area = a ? a.index : -1;
   }
   record.setBuses([...feed.buses.values()]);
+  record.setBusesFaded(feed.state !== 'live');
   // Replay the last window's pings over the next poll, in the order they happened.
   const now = performance.now();
   const span = Math.max(1, windowEnd - windowStart);
@@ -365,7 +391,7 @@ function updateTraffic() {
   }
   speeds.sort((p, q) => p - q);
   traffic = { speed: speeds.length >= 3 ? speeds[speeds.length >> 1] : null, samples: speeds.length, buses: count };
-  music.setTempo(tempoForSpeed(feed.state === 'live' ? traffic.speed : null));
+  if (feed.state === 'live') music.setTempo(tempoForSpeed(traffic.speed));
 }
 
 function playBus(item) {
@@ -389,6 +415,32 @@ function playBus(item) {
     sub: moving
       ? `${BUS_VOICES.moving.instrument} · ${label}${b.speed != null ? ` · ${Math.round(b.speed)} km/h` : ''}`
       : `${BUS_VOICES.standing.instrument} · ${label} · ${b.speed != null && b.speed > 0.5 ? `crawling at ${Math.round(b.speed)} km/h` : 'not moving'}`,
+  });
+}
+
+/** A bus is due at a stop in the area, by BMTC's timetable (used while live buses are unavailable). */
+function busArrival(simMs, i) {
+  const stop = busTable.stops[busTable.stop[i]];
+  const route = busTable.routes[busTable.route[i]];
+  const waiting = busTable.end[i] === 1; // starting or ending its trip here: it waits at the stand
+  const [x0, y0, x1, y1] = area.box;
+  const [x, y] = stop.at;
+  const north = 1 - (y - y0) / (y1 - y0 || 1);
+  const degree = Math.max(0, Math.min(BUS_DEGREES - 1, Math.round(north * (BUS_DEGREES - 1))));
+  const pan = ((x - x0) / (x1 - x0 || 1)) * 1.6 - 0.8;
+  const eventPerf = performance.now() + (simMs - istNow());
+  const note = music.playBus({ moving: !waiting, degree, eventPerf, pan });
+  const label = note ? note.label : music.busLabel(degree);
+  const who = route ? `Route ${route}` : 'A bus';
+  const voice = waiting ? BUS_VOICES.standing : BUS_VOICES.moving;
+  visuals.push({
+    atPerf: note ? note.atPerf : eventPerf,
+    at: stop.at,
+    colour: waiting ? 'var(--sindoor)' : 'var(--ink)',
+    label: `${stop.name} · ${label}`,
+    row: { time: formatClock(simMs, false), who: route || 'BUS', where: stop.name, note: label, kind: waiting ? 'stand tt' : 'bus tt' },
+    title: waiting ? `${who} waiting at ${stop.name}` : `${who} due at ${stop.name}`,
+    sub: `${voice.instrument} · ${label} · from BMTC's timetable`,
   });
 }
 
@@ -436,9 +488,13 @@ function tick() {
   } else {
     const from = serviceMoment(metroUpTo);
     const to = serviceMoment(horizon);
-    if (from.dateKey === to.dateKey) tt.day(to).eachEvent(from.secs, to.secs, (t, trip, i) => metroArrival(to.dayStartMs + t * 1000, trip, i));
+    if (from.dateKey === to.dateKey) {
+      tt.day(to).eachEvent(from.secs, to.secs, (t, trip, i) => metroArrival(to.dayStartMs + t * 1000, trip, i));
+      if (timetableMode() && busTable) busTable.eachArrival(to.weekday, from.secs, to.secs, (i, t) => busArrival(to.dayStartMs + t * 1000, i));
+    }
     metroUpTo = horizon;
   }
+  if (timetableMode()) ensureBusTable();
   const until = performance.now() + ahead;
   while (queue.length && queue[0].atPerf <= until) {
     const item = queue.shift();
@@ -499,21 +555,55 @@ function updateUi(ist, trains, now) {
   $('m-buses').textContent = feed.buses.size ? feed.buses.size.toLocaleString('en-IN') : '–';
 
   const state = feed.state;
-  const sticker = $('sticker');
-  sticker.dataset.state = state;
+  const tableOn = timetableMode() && !!busTable;
   const since = feed.feedTime ? TIME(feed.feedTime) : '';
-  const [main, sub, note] = {
-    loading: ['…', 'Buses', 'Finding live buses…'],
-    live: ['LIVE', 'BMTC GPS', 'Live bus positions, a minute or two behind'],
-    paused: ['PAUSED', `since ${since}`, `The live bus feed has paused since ${since} IST. The metro plays on.`],
-    sample: ['SAMPLE', since, `Live buses aren't reachable here, so these are buses from ${since} IST on ${dayOf(feed.feedTime)}.`],
-    error: ['OFFLINE', 'Metro only', 'Bus positions could not be loaded. The metro plays on.'],
-  }[state];
+  const sinceText = feed.feedTime ? `${since} IST${dayOf(feed.feedTime) !== dayOf(ist / 1000 - IST_OFFSET_MS / 1000) ? ` on ${dayOf(feed.feedTime)}` : ''}` : '';
+  const [main, sub, note] = tableOn
+    ? state === 'paused'
+      ? ['TIMETABLE', 'Live paused', `Buses are playing from BMTC's timetable. Live positions paused at ${since} IST.`]
+      : ['TIMETABLE', 'Live unreachable', "Live buses can't be reached here, so buses play from BMTC's timetable."]
+    : {
+        loading: ['…', 'Buses', 'Finding live buses…'],
+        live: ['LIVE', 'BMTC GPS', 'Live bus positions, a minute or two behind'],
+        paused: ['PAUSED', `since ${since}`, `The live bus feed has paused since ${since} IST.`],
+        sample: ['SAMPLE', since, `Live buses aren't reachable here, so these are buses from ${since} IST on ${dayOf(feed.feedTime)}.`],
+        error: ['OFFLINE', 'Metro only', 'Bus positions could not be loaded. The metro plays on.'],
+      }[state];
+  $('sticker').dataset.state = tableOn ? 'timetable' : state;
   $('sticker-main').textContent = main;
   $('sticker-sub').textContent = sub;
   $('feed-note').textContent = note;
+  $('legend-bus').textContent = state === 'live' ? 'Bus, live GPS' : 'Bus, last live position';
+  record.setBusesFaded(state !== 'live');
 
-  $('f-buses').textContent = feed.buses.size ? traffic.buses : '–';
+  // The notice under the masthead says plainly why buses aren't live, and when it last checked.
+  const notice = $('bus-notice');
+  notice.hidden = state === 'live' || state === 'loading';
+  if (!notice.hidden) {
+    const checked = feed.checkedAt ? formatClock(feed.checkedAt + IST_OFFSET_MS) : '';
+    if (state === 'paused') {
+      const ago = Math.max(0, Date.now() / 1000 - feed.feedTime);
+      const agoText = ago >= 3600 ? `${Math.floor(ago / 3600)} h ${Math.floor((ago % 3600) / 60)} min` : `${Math.max(1, Math.floor(ago / 60))} min`;
+      $('bus-notice-title').textContent = 'Live buses are taking a break';
+      $('bus-notice-text').textContent = `BMTC's live bus feed, which reaches us through reclaim.city, hasn't sent new positions since ${sinceText}. Until it's back, buses in every area play from BMTC's published timetable, so the music keeps going. The metro always follows its timetable. This page checks again every minute and switches back to live buses by itself.`;
+      $('bus-notice-meta').textContent = `Last live update ${sinceText}, ${agoText} ago${checked ? ` · Last checked ${checked} IST` : ''}`;
+    } else {
+      $('bus-notice-title').textContent = "Live buses can't be reached from here";
+      $('bus-notice-text').textContent = "This copy of the page can't reach BMTC's live bus feed, so buses in every area play from BMTC's published timetable. The metro always follows its timetable.";
+      $('bus-notice-meta').textContent = checked ? `Last checked ${checked} IST` : '';
+    }
+  }
+
+  const m = serviceMoment(ist);
+  if (tableOn) {
+    const due = busTable.dueThisHour(m.weekday, m.secs);
+    music.setTempo(tempoForBusesDue(due));
+    $('f-buses-label').textContent = 'Due / 10 min';
+    $('f-buses').textContent = Math.round(due / 6);
+  } else {
+    $('f-buses-label').textContent = 'Buses now';
+    $('f-buses').textContent = feed.buses.size ? traffic.buses : '–';
+  }
   $('f-traffic').textContent = state === 'live' && traffic.speed != null ? `${Math.round(traffic.speed)}` : '–';
   $('f-pulse').textContent = music.tempo;
 
@@ -525,7 +615,7 @@ function updateUi(ist, trains, now) {
   } else {
     $('np-progress').style.width = '100%';
     $('np-left').textContent = since || '--:--';
-    $('np-right').textContent = state === 'loading' ? 'loading' : state;
+    $('np-right').textContent = tableOn ? 'timetable' : state === 'loading' ? 'loading' : state;
   }
 
   if (boardDirty) renderBoard();

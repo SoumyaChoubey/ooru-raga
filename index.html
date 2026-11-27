@@ -39,6 +39,17 @@
   </div>
 </header>
 
+<aside id="bus-notice" class="wrap notice" role="status" hidden>
+  <div class="notice-inner">
+    <span class="notice-icon" aria-hidden="true">!</span>
+    <div class="notice-body">
+      <p id="bus-notice-title" class="notice-title">Live buses are taking a break</p>
+      <p id="bus-notice-text"></p>
+      <p id="bus-notice-meta" class="notice-meta caps"></p>
+    </div>
+  </div>
+</aside>
+
 <main class="wrap main">
   <section class="stage" aria-label="Bengaluru drawn as a record. Tap an area to listen to it.">
     <canvas id="record" role="img" aria-label="Map of Bengaluru as a record, divided into areas, with live buses as dots and the metro lines"></canvas>
@@ -48,7 +59,7 @@
       <p id="feed-note" class="caps">Finding live buses…</p>
     </div>
     <div class="legend" aria-hidden="true">
-      <span><i class="dot"></i>Bus, live GPS</span>
+      <span><i class="dot"></i><span id="legend-bus">Bus, live GPS</span></span>
       <span><i class="ln"></i>Metro, timetable</span>
     </div>
     <div id="tooltip" class="tooltip" hidden></div>
@@ -69,7 +80,7 @@
       <div class="poster-name"><h2 id="area-name">&nbsp;</h2><span id="area-kn" class="kn" lang="kn"></span></div>
       <input id="share-link" class="share-link" type="text" readonly hidden aria-label="Link to this area">
       <dl class="facts">
-        <div><dt>Buses now</dt><dd id="f-buses">–</dd></div>
+        <div><dt id="f-buses-label">Buses now</dt><dd id="f-buses">–</dd></div>
         <div><dt>Traffic km/h</dt><dd id="f-traffic">–</dd></div>
         <div><dt>Pulse bpm</dt><dd id="f-pulse">–</dd></div>
         <div><dt>Metro stops</dt><dd id="f-metro">–</dd></div>

@@ -107,6 +107,13 @@ export class Record {
     this.renderStatic();
   }
 
+  /** Live positions are old (feed paused): draw them faintly. */
+  setBusesFaded(faded) {
+    if (this.busesFaded === faded) return;
+    this.busesFaded = faded;
+    this.renderBuses();
+  }
+
   setBuses(buses) {
     this.buses = buses;
     this.renderBuses();
@@ -304,13 +311,14 @@ export class Record {
     c.arc(this.cx, this.cy, this.R - 2, 0, Math.PI * 2);
     c.clip();
     const sel = this.selected ? this.selected.index : -1;
-    c.fillStyle = 'rgba(245,179,1,0.62)';
+    c.fillStyle = this.busesFaded ? 'rgba(245,179,1,0.2)' : 'rgba(245,179,1,0.62)';
     for (const b of this.buses) {
       if (b.area === sel) continue;
       const [x, y] = this.px([b.x, b.y]);
       c.fillRect(x - 1.1, y - 1.1, 2.2, 2.2);
     }
     c.fillStyle = this.c.ink;
+    c.globalAlpha = this.busesFaded ? 0.3 : 1;
     for (const b of this.buses) {
       if (b.area !== sel) continue;
       const [x, y] = this.px([b.x, b.y]);
@@ -318,6 +326,7 @@ export class Record {
       c.arc(x, y, 2.3, 0, Math.PI * 2);
       c.fill();
     }
+    c.globalAlpha = 1;
     c.restore();
   }
 
